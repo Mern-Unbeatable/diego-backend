@@ -12,6 +12,7 @@ router.use(i18nMiddleware);
 
 // Public/User routes
 router.get('/my', enrollmentController.getMyEnrollments);
+router.get('/:id', enrollmentController.getEnrollmentById);
 router.get('/my-progress/:courseId', enrollmentController.getMyProgress);
 router.patch(
     '/:enrollmentId/lessons/:lessonId/progress',
@@ -32,7 +33,7 @@ router.get('/stats/:courseId', adminGuard, tenantGuard, enrollmentController.get
 router.post('/bulk', adminGuard, tenantGuard, enrollmentController.bulkEnroll);
 router.post('/', adminGuard, tenantGuard, enrollmentController.createEnrollment);
 router.get('/', adminGuard, tenantGuard, enrollmentController.getAllEnrollments);
-router.get('/:id', adminGuard, tenantGuard, enrollmentController.getEnrollmentById);
+
 router.patch('/:id', adminGuard, tenantGuard, enrollmentController.updateEnrollment);
 router.delete('/:id', adminGuard, tenantGuard, enrollmentController.deleteEnrollment);
 

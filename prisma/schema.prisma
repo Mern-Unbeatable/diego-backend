@@ -398,19 +398,21 @@ model Course {
   cup String?
   cip String?
 
-  type                   Json?
-  scormPackageUrl        String?
-  courseLocation         Json?
-  selectType             Json?
-  sector                 Json?
-  fund                   Json?
-  methodology            Json?
-  trainingProjectManager Json?
-  tutorName              Json?
-  vat                    Json?
-  thumbnailUrl           String?
-  documentUrl            String?
-  videoUrl               String?
+  type                      Json?
+  scormPackageUrl           String?
+  courseLocation            Json?
+  selectType                Json?
+  sector                    Json?
+  fund                      Json?
+  methodology               Json?
+  trainingProjectManager    Json?
+  tutorName                 Json?
+  vat                       Json?
+  thumbnailUrl              String?
+  documentUrl               String?
+  videoUrl                  String?
+  certificateTemplateUrl    String?
+  certificateTemplateConfig Json?
 
   price     Float   @default(0)
   basePrice Float   @default(0)
