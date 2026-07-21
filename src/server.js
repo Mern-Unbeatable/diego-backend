@@ -1,6 +1,7 @@
 import { json, urlencoded } from 'express';
 import http from 'http';
 import path from 'path';
+
 import cors from 'cors';
 import helmet from 'helmet';
 import hpp from 'hpp';
@@ -141,6 +142,7 @@ export class Server {
     });
 
     app.use(urlencoded({ extended: true, limit: '50mb' }));
+
 
     // Serve locally uploaded files (courses/thumbnails, tickets, staff docs, etc.)
     app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
