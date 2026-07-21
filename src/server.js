@@ -15,6 +15,7 @@ import { config } from './config/config.js';
 import applicationRoutes from './routes/index.js';
 import { Logger } from './config/logger.js';
 import { CustomError } from './shared/globals/helpers/error-handler.js';
+import { maintenanceModeMiddleware } from './shared/globals/helpers/platform-setting.middleware.js';
 
 const flattenZodIssues = (issues) => {
   const collected = [];
@@ -156,6 +157,7 @@ export class Server {
   }
 
   routesMiddleware(app) {
+    app.use(maintenanceModeMiddleware);
     applicationRoutes(app);
   }
 

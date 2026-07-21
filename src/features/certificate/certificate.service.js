@@ -16,6 +16,7 @@ import {
     userHasArchiveAccess,
 } from './certificate.archive.js';
 import { CERTIFICATE_FREE_DOWNLOAD_DAYS } from './certificate.constants.js';
+import { platformSettingService } from '../platformSetting/platformSetting.service.js';
 import {
     generateCertificatePdf,
     deleteCertificatePdf,
@@ -446,6 +447,7 @@ export class CertificateService {
 
         if (!certificate) throw new Error('Certificate not found');
 
+        await platformSettingService.assertDownloadAllowed();
         await this._checkDownloadPermission(certificate, requestingUser);
 
         if (certificate.status !== 'ISSUED') {

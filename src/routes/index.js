@@ -25,6 +25,7 @@ import { collaborationRoutes } from '../features/collaboration/collaboration.rou
 import { courseReviewRoutes } from '../features/courseReview/courseReview.route.js';
 import { coursePackageRoutes } from '../features/coursePackage/coursePackage.route.js';
 import { packageRoutes } from '../features/package/package.route.js';
+import { platformSettingRoutes } from '../features/platformSetting/platformSetting.route.js';
 
 const BASE_PATH = '/api/v1';
 
@@ -56,4 +57,5 @@ export default (app) => {
   app.use(`${BASE_PATH}/collaborations`, collaborationRoutes);
   app.use(`${BASE_PATH}/course-packages`, coursePackageRoutes);
   app.use(`${BASE_PATH}/packages`, packageRoutes);
+  app.use(`${BASE_PATH}/platform-settings`, platformSettingRoutes);
 };

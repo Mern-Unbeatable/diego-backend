@@ -1309,3 +1309,17 @@ model CollaborationRequest {
   @@index([status])
   @@index([createdAt])
 }
+
+model PlatformSetting {
+  id String @id @default("global")
+
+  downloadPermissionEnabled  Boolean @default(true)
+  newUserRegistrationEnabled Boolean @default(true)
+  paymentProcessingEnabled   Boolean @default(true)
+  maintenanceModeEnabled     Boolean @default(false)
+  maintenanceMessage         Json?
+
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+}

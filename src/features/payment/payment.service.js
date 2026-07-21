@@ -7,6 +7,7 @@ import { notificationService } from '../notification/notification.service.js';
 import { activateArchiveSubscription } from '../certificate/certificate.archive.js';
 import { ARCHIVE_ANNUAL_PRICE_EUR } from '../certificate/certificate.constants.js';
 import { PLATFORM_FEE_PERCENT } from '../Income/Income.constants.js';
+import { platformSettingService } from '../platformSetting/platformSetting.service.js';
 
 const stripe = new Stripe(config.STRIPE_SECRET_KEY);
 const log = new Logger('PaymentService');
@@ -37,6 +38,10 @@ class PaymentService {
   _parseNonNegativeFloat(value) {
     const parsed = Number.parseFloat(String(value));
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  }
+
+  async _assertPaymentProcessingEnabled() {
+    await platformSettingService.assertPaymentAllowed();
   }
 
 
@@ -406,6 +411,8 @@ class PaymentService {
   }
 
   async createCourseCheckout({ userId, courseId, couponCode = null }) {
+    await this._assertPaymentProcessingEnabled();
+
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, tenantId: true } });
     if (!user) throw new Error('User not found');
 
@@ -451,6 +458,8 @@ class PaymentService {
   }
 
   async createLicensePayment(data) {
+    await this._assertPaymentProcessingEnabled();
+
     const { userId, licenseId, planId, amount, billingCycle, couponCode, vatPercentage = 22, tenantId } = data;
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, firstName: true, lastName: true, stripeCustomerId: true } });
     if (!user) throw new Error('User not found');
@@ -510,6 +519,8 @@ class PaymentService {
   }
 
   async createLicenseRenewalPayment(data) {
+    await this._assertPaymentProcessingEnabled();
+
     const { userId, licenseId, planId, amount, billingCycle, couponCode, vatPercentage = 22, tenantId } = data;
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, firstName: true, lastName: true, stripeCustomerId: true } });
     if (!user) throw new Error('User not found');
@@ -532,6 +543,8 @@ class PaymentService {
   }
 
   async createLicenseCheckout(data) {
+    await this._assertPaymentProcessingEnabled();
+
     const { userId, planId, amount, billingCycle, couponCode, companyName, subdomain, customDomain, phoneNumber, emailAddress, certifiedEmail, vatNumber, vatPercentage = 22, tenantId } = data;
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, firstName: true, lastName: true, stripeCustomerId: true } });
     if (!user) throw new Error('User not found');
@@ -554,6 +567,8 @@ class PaymentService {
   }
 
   async createLicenseRenewalCheckout(data) {
+    await this._assertPaymentProcessingEnabled();
+
     const { userId, licenseId, planId, amount, billingCycle, couponCode, vatPercentage = 22, tenantId, currentPlanTier, newPlanTier } = data;
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, firstName: true, lastName: true, stripeCustomerId: true } });
     if (!user) throw new Error('User not found');
@@ -579,6 +594,8 @@ class PaymentService {
 
 
   async createCompanyCourseCheckout({ userId, courseId, tierId = null, minUsers = null, maxUsers = null, seatsCount = null, couponCode = null }) {
+    await this._assertPaymentProcessingEnabled();
+
     const requester = await prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, email: true, companyId: true },
@@ -810,6 +827,8 @@ class PaymentService {
   }
 
   async createCourseRenewalCheckout({ userId, enrollmentId, couponCode = null }) {
+    await this._assertPaymentProcessingEnabled();
+
     const enrollment = await prisma.enrollment.findUnique({
       where: { id: enrollmentId },
       include: { course: { select: { id: true, courseTitle: true, slug: true, price: true, basePrice: true, isActive: true, validityDays: true, tenantId: true } } },
@@ -918,6 +937,8 @@ class PaymentService {
 
 
   async createCompanyCourseRenewalCheckout({ userId, companyCoursePurchaseId, tierId = null, minUsers = null, maxUsers = null, newSeatsCount = null, couponCode = null }) {
+    await this._assertPaymentProcessingEnabled();
+
     const purchase = await prisma.companyCoursePurchase.findUnique({
       where: { id: companyCoursePurchaseId },
       include: {
@@ -1218,6 +1239,8 @@ class PaymentService {
   }
 
   async createArchiveCheckout({ userId, tenantId = null }) {
+    await this._assertPaymentProcessingEnabled();
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, email: true, level: true, tenantId: true },

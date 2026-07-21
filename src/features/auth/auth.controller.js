@@ -17,6 +17,7 @@ import {
   changePasswordSchema,
   forgotPasswordSchema,
 } from './auth.validation.js';
+import { platformSettingService } from '../platformSetting/platformSetting.service.js';
 
 
 const LEVEL_BY_ACCOUNT_TYPE = {
@@ -67,6 +68,8 @@ class AuthController {
   }
 
   startRegistration = catchAsync(async (req, res) => {
+    await platformSettingService.assertRegistrationAllowed();
+
     const { email, preferredLanguage } = startRegistrationSchema.parse(req.body);
     this.log.info(`Registration start: ${email}`);
 
