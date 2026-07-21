@@ -98,7 +98,8 @@ class AuthController {
         email: user.email,
         isVerified: false,
         preferredLanguage: user.preferredLanguage,
-        ...(config.NODE_ENV === 'development' && { otp }),
+        otp
+        // ...(config.NODE_ENV === 'development' && { otp }),
       },
     });
   });
@@ -227,7 +228,8 @@ class AuthController {
       data: {
         userId: user.id,
         email: user.email,
-        ...(config.NODE_ENV === 'development' && { otp }),
+        otp
+        // ...(config.NODE_ENV === 'development' && { otp }),
       },
     });
   });
