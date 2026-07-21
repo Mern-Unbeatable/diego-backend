@@ -141,6 +141,16 @@ class EnrollmentController {
             data: { progress },
         });
     });
+    getLicenseeOverview = catchAsync(async (req, res) => {
+        const query = enrollmentQuerySchema.parse(req.query);
+        const result = await enrollmentService.getLicenseeOverview(query, req.user);
+
+        ResponseHandler.success(res, {
+            message: 'License dashboard fetched successfully',
+            data: result,
+        });
+    });
+
     getLicenseeAllEnrollments = catchAsync(async (req, res) => {
         const query = enrollmentQuerySchema.parse(req.query);
 

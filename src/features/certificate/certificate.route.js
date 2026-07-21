@@ -22,8 +22,9 @@ router.get('/:id', certificateController.getCertificateById);
 const generateGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSE_USER', 'COMPANY_ADMIN');
 router.post('/generate', generateGuard, uploadCertificateFiles, certificateController.generateCertificate);
 
+const listGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSE_USER');
 const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN');
-router.get('/', adminGuard, certificateController.getAllCertificates);
+router.get('/', listGuard, certificateController.getAllCertificates);
 router.patch('/:id', adminGuard, uploadCertificateFiles, certificateController.updateCertificate);
 router.delete('/:id', adminGuard, certificateController.deleteCertificate);
 

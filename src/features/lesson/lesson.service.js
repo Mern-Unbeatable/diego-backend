@@ -1,6 +1,7 @@
 
 import { prisma } from '../../config/db.js';
 import { localizeObject } from '../../shared/services/translate/translate.service.js';
+import { enrollmentService } from '../enrollment/enrollment.service.js';
 
 const LESSON_I18N_KEYS = ['title'];
 export class LessonService {
@@ -218,50 +219,6 @@ export class LessonService {
     }
 
     async reorderLessons(courseId, lessonOrders, user = null) {
-        // 1. Check if course exists
-        const course = await prisma.course.findUnique({
-            where: { id: courseId },
-            select: { id: true, tenantId: true, createdById: true },
-        });
-        if (!course) throw new Error('Course not found');
-
-        // 2. Check permission
-        if (user) await this._checkCoursePermission(course, user);
-
-        // 3. Get all lesson IDs from request
-        const lessonIds = lessonOrders.map(l => l.id);
-
-        // 4. Verify all lessons belong to this course
-        const dbLessons = await prisma.lesson.findMany({
-            where: { id: { in: lessonIds }, courseId },
-            select: { id: true },
-        });
-
-        // 5. If any lesson doesn't belong, throw error
-        if (dbLessons.length !== lessonIds.length) {
-            throw new Error('One or more lessons do not belong to this course');
-        }
-
-        // 6. Update each lesson's orderIndex in a transaction
-        await prisma.$transaction(
-            lessonOrders.map(({ id, orderIndex }) =>
-                prisma.lesson.update({
-                    where: { id },
-                    data: { orderIndex }
-                })
-            )
-        );
-
-        // 7. Return updated lessons
-        return prisma.lesson.findMany({
-            where: { courseId },
-            orderBy: { orderIndex: 'asc' },
-        });
-    }
-
-
-
-    async reorderLessons(courseId, lessonOrders, user = null) {
         try {
             const course = await prisma.course.findUnique({
                 where: { id: courseId },
@@ -430,10 +387,7 @@ export class LessonService {
         });
 
         if (allDone) {
-            await prisma.enrollment.update({
-                where: { id: enrollmentId },
-                data: { status: 'COMPLETED', completedAt: new Date() },
-            });
+            await enrollmentService.checkAndUpdateEnrollmentStatus(enrollmentId);
         }
     }
 

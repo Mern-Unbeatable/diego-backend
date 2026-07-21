@@ -1,6 +1,6 @@
 
 import { prisma } from '../../config/db.js';
-import { certificateService } from '../certificate/certificate.service.js';
+import { enrollmentService } from '../enrollment/enrollment.service.js';
 import { notificationService } from '../notification/notification.service.js';
 import { Logger } from '../../config/logger.js';
 import { STATUS_MAP, STATUS_PRIORITY } from './course.constant.js';
@@ -297,45 +297,18 @@ class ScormService {
 
         if (!enrollment || enrollment.status === 'COMPLETED') return;
 
+        await enrollmentService.checkAndUpdateEnrollmentStatus(enrollmentId);
 
-        const requiredLessons = await prisma.lesson.findMany({
-            where: {
-                courseId: enrollment.courseId,
-                isRequired: true,
-                contentType: { in: ['SCORM', 'SCORM_12'] },
-            },
-            select: { id: true },
-        });
-
-        if (requiredLessons.length === 0) return;
-
-        const completedCount = await prisma.lessonProgress.count({
-            where: {
-                enrollmentId,
-                lessonId: { in: requiredLessons.map(l => l.id) },
-                scormStatus: { in: ['COMPLETED', 'PASSED'] },
-            },
-        });
-
-        const allDone = completedCount >= requiredLessons.length;
-
-        if (!allDone) {
-            await this._maybeNotifyTestAvailable(enrollment);
-            return;
-        }
-
-        // Mark enrollment COMPLETED
-        await prisma.enrollment.update({
+        const updated = await prisma.enrollment.findUnique({
             where: { id: enrollmentId },
-            data: { status: 'COMPLETED', completedAt: new Date() },
+            select: { status: true },
         });
 
-        log.info(`Enrollment ${enrollmentId} marked COMPLETED`);
-
-        // Auto-generate certificate
-        certificateService.autoGenerateOnCompletion(enrollmentId).catch(err => {
-            log.error(`Certificate auto-generation failed for enrollment ${enrollmentId}: ${err.message}`);
-        });
+        if (updated?.status !== 'COMPLETED') {
+            await this._maybeNotifyTestAvailable(enrollment);
+        } else {
+            log.info(`Enrollment ${enrollmentId} marked COMPLETED via enrollment service`);
+        }
     }
 
     async _maybeNotifyTestAvailable(enrollment) {
