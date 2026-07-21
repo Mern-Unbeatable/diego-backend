@@ -3,6 +3,15 @@ import { prisma } from '../../config/db.js';
 import { randomBytes } from 'crypto';
 import { addDays } from 'date-fns';
 import { certificateService } from '../certificate/certificate.service.js';
+import {
+    LICENSEE_COURSE_SELECT,
+    formatLicenseeCourse,
+    formatLicenseeLesson,
+    formatLicenseeQuiz,
+    formatStudentUser,
+    uniqueStudentIdsOrdered,
+    pickLocalizedTitle,
+} from './enrollment.utils.js';
 
 class EnrollmentService {
 
@@ -39,6 +48,9 @@ class EnrollmentService {
         const { tenantId } = await this._getLicenseeContext(user, queryParams);
         const courseWhere = {};
         if (tenantId) courseWhere.tenantId = tenantId;
+        if (user?.level === 'LICENSE_USER' || user?.level === 'PLATFORM_ADMIN') {
+            courseWhere.createdById = user.id;
+        }
         if (queryParams.courseId) courseWhere.id = queryParams.courseId;
 
         const courses = await prisma.course.findMany({
@@ -83,7 +95,7 @@ class EnrollmentService {
         };
     }
 
-    async getLicenseeOverview(queryParams = {}, user = null) {
+    async getLicenseeOverview(queryParams = {}, user = null, locale = 'it') {
         const { tenantId } = await this._getLicenseeContext(user, queryParams);
         const courseIds = await this._getLicenseeCourseIds(user, queryParams);
 
@@ -170,7 +182,7 @@ class EnrollmentService {
             courseBreakdown: courseBreakdown.map(course => ({
                 id: course.id,
                 slug: course.slug,
-                courseTitle: course.courseTitle,
+                courseTitle: pickLocalizedTitle(course.courseTitle, locale),
                 isActive: course.isActive,
                 totalEnrollments: course._count.enrollments,
             })),
@@ -291,7 +303,7 @@ class EnrollmentService {
             enrollments,
         };
     }
-    async getEnrollments(queryParams = {}, userId = null, user = null) {
+    async getEnrollments(queryParams = {}, userId = null, user = null, locale = 'it') {
         const page = parseInt(queryParams.page) || 1;
         const limit = Math.min(parseInt(queryParams.limit) || 20, 100);
         const skip = (page - 1) * limit;
@@ -299,11 +311,14 @@ class EnrollmentService {
         const where = {};
 
         if (user?.level === 'PLATFORM_ADMIN') {
-            if (queryParams.tenantId) where.course = { tenantId: queryParams.tenantId };
+            where.course = {
+                ...(queryParams.tenantId && { tenantId: queryParams.tenantId }),
+                createdById: user.id,
+            };
         } else if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (!tenantId) throw new Error('Licensee user must have a tenant');
-            where.course = { tenantId };
+            where.course = { tenantId, createdById: user.id };
         } else {
             if (!userId && user?.id) userId = user.id;
             if (userId) where.userId = userId;
@@ -338,15 +353,7 @@ class EnrollmentService {
                         select: { id: true, email: true, firstName: true, lastName: true, level: true },
                     },
                     course: {
-                        select: {
-                            id: true,
-                            slug: true,
-                            courseTitle: true,
-                            format: true,
-                            price: true,
-                            thumbnailUrl: true,
-                            tenantId: true,
-                        },
+                        select: LICENSEE_COURSE_SELECT,
                     },
                     packagePurchase: {
                         select: { id: true, package: { select: { id: true, name: true } } },
@@ -360,21 +367,12 @@ class EnrollmentService {
 
         const enrollmentsWithProgress = await Promise.all(
             enrollments.map(async enrollment => {
-                const [totalLessons, completedLessons] = await Promise.all([
-                    prisma.lesson.count({ where: { courseId: enrollment.courseId } }),
-                    prisma.lessonProgress.count({
-                        where: { enrollmentId: enrollment.id, completed: true },
-                    }),
-                ]);
+                const progress = await this._computeEnrollmentProgress(enrollment.id, enrollment.courseId);
                 return {
                     ...enrollment,
-                    progress: {
-                        totalLessons,
-                        completedLessons,
-                        percentage: totalLessons > 0
-                            ? Math.round((completedLessons / totalLessons) * 100)
-                            : 0,
-                    },
+                    course: formatLicenseeCourse(enrollment.course, locale),
+                    user: formatStudentUser(enrollment.user),
+                    progress,
                 };
             })
         );
@@ -440,11 +438,15 @@ class EnrollmentService {
 
         if (!enrollment) return null;
 
-        if (user?.level === 'PLATFORM_ADMIN') return enrollment;
+        if (user?.level === 'PLATFORM_ADMIN') {
+            if (enrollment.course?.createdById !== user.id) return null;
+            return enrollment;
+        }
 
         if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (enrollment.course?.tenantId !== tenantId) return null;
+            if (enrollment.course?.createdById !== user.id) return null;
             return enrollment;
         }
 
@@ -601,14 +603,20 @@ class EnrollmentService {
     }
     async getEnrollmentStats(courseId = null, user = null) {
         const where = {};
-        if (courseId) where.courseId = courseId;
+        if (courseId) {
+            if (user && ['PLATFORM_ADMIN', 'LICENSE_USER'].includes(user.level)) {
+                const course = await this.validateCourseAccess(courseId, user);
+                if (!course) throw new Error('Course not found');
+            }
+            where.courseId = courseId;
+        }
 
         if (user?.level === 'PLATFORM_ADMIN') {
-            // no filter
+            where.course = { createdById: user.id };
         } else if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (!tenantId) throw new Error('Licensee must have a tenant');
-            where.course = { tenantId };
+            where.course = { tenantId, createdById: user.id };
         } else if (user?.tenantId) {
             where.course = { tenantId: user.tenantId };
         }
@@ -708,18 +716,19 @@ class EnrollmentService {
         const where = { id: courseId };
 
         if (user?.level === 'PLATFORM_ADMIN') {
-            // no filter
+            where.createdById = user.id;
         } else if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (!tenantId) throw new Error('Licensee user must have a tenant');
             where.tenantId = tenantId;
+            where.createdById = user.id;
         } else if (user?.tenantId) {
             where.tenantId = user.tenantId;
         }
 
         return prisma.course.findUnique({
             where,
-            select: { id: true, isActive: true, validityDays: true, slug: true, tenantId: true },
+            select: { id: true, isActive: true, validityDays: true, slug: true, tenantId: true, createdById: true },
         });
     }
 
@@ -771,7 +780,7 @@ class EnrollmentService {
 
         return packagePurchase;
     }
-    async getLicenseeAllEnrollments(queryParams = {}, user = null) {
+    async getLicenseeAllEnrollments(queryParams = {}, user = null, locale = 'it') {
         const page = parseInt(queryParams.page) || 1;
         const limit = Math.min(parseInt(queryParams.limit) || 20, 100);
         const skip = (page - 1) * limit;
@@ -834,25 +843,7 @@ class EnrollmentService {
                         },
                     },
                     course: {
-                        select: {
-                            id: true,
-                            slug: true,
-                            courseTitle: true,
-                            format: true,
-                            price: true,
-                            thumbnailUrl: true,
-                            isActive: true,
-                            tenantId: true,
-                            createdById: true,
-                            createdBy: {
-                                select: {
-                                    id: true,
-                                    email: true,
-                                    firstName: true,
-                                    lastName: true,
-                                },
-                            },
-                        },
+                        select: LICENSEE_COURSE_SELECT,
                     },
                     packagePurchase: {
                         select: {
@@ -887,14 +878,19 @@ class EnrollmentService {
 
                 return {
                     ...enrollment,
+                    course: formatLicenseeCourse(enrollment.course, locale),
+                    user: formatStudentUser(enrollment.user),
                     progress,
                     courseSummary: {
-                        title: enrollment.course.courseTitle,
+                        title: pickLocalizedTitle(enrollment.course.courseTitle, locale),
                         format: enrollment.course.format,
+                        category: enrollment.course.category,
                         isActive: enrollment.course.isActive,
+                        validityDays: enrollment.course.validityDays,
+                        lessonCount: enrollment.course._count?.lessons ?? 0,
                     },
                     userSummary: {
-                        name: `${enrollment.user.firstName || ''} ${enrollment.user.lastName || ''}`.trim(),
+                        name: `${enrollment.user.firstName || ''} ${enrollment.user.lastName || ''}`.trim() || enrollment.user.email,
                         email: enrollment.user.email,
                     },
                     certificateDownload: enrollment.certificate?.pdfUrl
@@ -925,7 +921,10 @@ class EnrollmentService {
         };
     }
     async getLicenseeEnrollmentStats(where = {}, tenantId = null, user = null) {
-        const courseWhere = tenantId ? { tenantId } : {};
+        const courseWhere = {
+            ...(tenantId && { tenantId }),
+            ...(user?.id && { createdById: user.id }),
+        };
 
         const [totalCourses, courseStats, enrollmentStats, statusBreakdown] = await Promise.all([
             // Total courses
@@ -997,7 +996,7 @@ class EnrollmentService {
 
 
 
-    async getLicenseeStudents(queryParams = {}, user = null) {
+    async getLicenseeStudents(queryParams = {}, user = null, locale = 'it') {
         await this._getLicenseeContext(user, queryParams);
 
         const page = parseInt(queryParams.page) || 1;
@@ -1038,12 +1037,11 @@ class EnrollmentService {
         // Prisma groupBy orderBy _count is unreliable across versions; use raw distinct approach
         const allEnrollmentsForCount = await prisma.enrollment.findMany({
             where: enrollmentWhere,
-            select: { userId: true },
-            distinct: ['userId'],
+            select: { userId: true, createdAt: true },
             orderBy: { createdAt: 'desc' },
         });
 
-        const allStudentIds = allEnrollmentsForCount.map(e => e.userId);
+        const allStudentIds = uniqueStudentIdsOrdered(allEnrollmentsForCount);
         const totalStudents = allStudentIds.length;
 
         // Paginate student IDs manually
@@ -1065,10 +1063,20 @@ class EnrollmentService {
             },
             include: {
                 user: {
-                    select: { id: true, email: true, firstName: true, lastName: true, level: true, companyName: true },
+                    select: {
+                        id: true,
+                        email: true,
+                        firstName: true,
+                        lastName: true,
+                        level: true,
+                        companyName: true,
+                        birthDate: true,
+                        traineeTaxCode: true,
+                        contactNumber: true,
+                    },
                 },
                 course: {
-                    select: { id: true, slug: true, courseTitle: true, format: true, thumbnailUrl: true },
+                    select: LICENSEE_COURSE_SELECT,
                 },
                 certificate: {
                     select: { id: true, status: true, issuedAt: true, pdfUrl: true },
@@ -1099,7 +1107,7 @@ class EnrollmentService {
         for (const enrollment of enrollments) {
             const uid = enrollment.userId;
             if (!studentMap.has(uid)) {
-                studentMap.set(uid, { user: enrollment.user, enrollments: [] });
+                studentMap.set(uid, { user: formatStudentUser(enrollment.user), enrollments: [] });
             }
 
             const totalLessons = lessonCountMap.get(enrollment.courseId) ?? 0;
@@ -1124,13 +1132,7 @@ class EnrollmentService {
                 completedAt: enrollment.completedAt,
                 expiresAt: enrollment.expiresAt,
                 createdAt: enrollment.createdAt,
-                course: {
-                    id: enrollment.course.id,
-                    slug: enrollment.course.slug,
-                    courseTitle: enrollment.course.courseTitle,
-                    format: enrollment.course.format,
-                    thumbnailUrl: enrollment.course.thumbnailUrl,
-                },
+                course: formatLicenseeCourse(enrollment.course, locale),
                 progress: {
                     totalLessons,
                     completedLessons,
@@ -1143,7 +1145,7 @@ class EnrollmentService {
                     all: enrollment.quizAttempts.map(a => ({
                         id: a.id,
                         quizId: a.quizId,
-                        quizTitle: a.quiz?.quizTitle,
+                        quizTitle: pickLocalizedTitle(a.quiz?.quizTitle, locale),
                         quizType: a.quiz?.quizType,
                         scorePercent: a.scorePercent,
                         passed: a.passed,
@@ -1220,7 +1222,7 @@ class EnrollmentService {
         };
     }
 
-    async getLicenseeStudentDetail(studentId, user = null) {
+    async getLicenseeStudentDetail(studentId, user = null, locale = 'it') {
         const { tenantId } = await this._getLicenseeContext(user, {});
         const licenseeCoursesIds = await this._getLicenseeCourseIds(user, {});
 
@@ -1252,13 +1254,18 @@ class EnrollmentService {
             },
             include: {
                 course: {
-                    include: {
+                    select: {
+                        ...LICENSEE_COURSE_SELECT,
                         lessons: {
                             orderBy: { orderIndex: 'asc' },
                             select: {
-                                id: true, title: true, orderIndex: true,
-                                contentType: true, durationSecs: true,
-                                isRequired: true, isLocked: true,
+                                id: true,
+                                title: true,
+                                orderIndex: true,
+                                contentType: true,
+                                durationSecs: true,
+                                isRequired: true,
+                                isLocked: true,
                             },
                         },
                     },
@@ -1293,8 +1300,8 @@ class EnrollmentService {
             },
         });
 
-        if (enrollments.length === 0 && user.level === 'LICENSE_USER') {
-            throw new Error('Student not found in your tenant courses');
+        if (enrollments.length === 0) {
+            throw new Error('Student not found in your courses or has no enrollments');
         }
 
         const progressMap = p => {
@@ -1304,7 +1311,7 @@ class EnrollmentService {
                 : p.completed === true;
             return {
                 lessonId: p.lessonId,
-                lessonTitle: p.lesson?.title,
+                lessonTitle: pickLocalizedTitle(p.lesson?.title, locale),
                 orderIndex: p.lesson?.orderIndex,
                 contentType: p.lesson?.contentType,
                 isScorm,
@@ -1332,6 +1339,8 @@ class EnrollmentService {
                 }
                 quizSummary[type].attempts.push({
                     id: attempt.id,
+                    quizTitle: pickLocalizedTitle(attempt.quiz?.quizTitle, locale),
+                    quizType: type,
                     scorePercent: attempt.scorePercent,
                     passed: attempt.passed,
                     attemptedAt: attempt.attemptedAt,
@@ -1351,12 +1360,8 @@ class EnrollmentService {
                 expiresAt: enrollment.expiresAt,
                 createdAt: enrollment.createdAt,
                 course: {
-                    id: enrollment.course.id,
-                    slug: enrollment.course.slug,
-                    courseTitle: enrollment.course.courseTitle,
-                    format: enrollment.course.format,
-                    thumbnailUrl: enrollment.course.thumbnailUrl,
-                    totalLessons,
+                    ...formatLicenseeCourse(enrollment.course, locale),
+                    lessons: (enrollment.course.lessons || []).map(l => formatLicenseeLesson(l, locale)),
                 },
                 progress: {
                     totalLessons,
@@ -1392,7 +1397,8 @@ class EnrollmentService {
         const totalQuizzes = courseDetails.reduce((s, c) => s + c.quizzes.totalAttempts, 0);
 
         return {
-            student,
+            student: formatStudentUser(student),
+            tenantId,
             summary: {
                 totalEnrollments: totalCourses,
                 completedCourses,

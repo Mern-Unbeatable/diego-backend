@@ -7,6 +7,7 @@ import {
     licenseIncomeQuerySchema,
     settleIncomeSchema,
     platformIncomeQuerySchema,
+    dashboardQuerySchema,
 } from './Income.validation.js';
 
 class IncomeController {
@@ -110,6 +111,63 @@ class IncomeController {
         ResponseHandler.success(res, {
             message: 'Platform income details fetched successfully',
             data: result
+        });
+    });
+
+    getLicenseUserDashboard = catchAsync(async (req, res) => {
+        const query = dashboardQuerySchema.parse(req.query);
+
+        const result = await incomeService.getLicenseUserDashboard(
+            req.user.id,
+            query,
+        );
+
+        ResponseHandler.success(res, {
+            message: 'License user dashboard fetched successfully',
+            data: result,
+        });
+    });
+
+    getLicenseUserReport = catchAsync(async (req, res) => {
+        const query = dashboardQuerySchema.parse(req.query);
+
+        const result = await incomeService.getLicenseUserReport(
+            req.user.id,
+            query,
+            req.locale,
+        );
+
+        ResponseHandler.success(res, {
+            message: 'License user report fetched successfully',
+            data: result,
+        });
+    });
+
+    getPlatformAdminDashboard = catchAsync(async (req, res) => {
+        const query = dashboardQuerySchema.parse(req.query);
+
+        const result = await incomeService.getPlatformAdminDashboard(
+            query,
+            req.user,
+        );
+
+        ResponseHandler.success(res, {
+            message: 'Platform admin dashboard fetched successfully',
+            data: result,
+        });
+    });
+
+    getPlatformAdminReport = catchAsync(async (req, res) => {
+        const query = dashboardQuerySchema.parse(req.query);
+
+        const result = await incomeService.getPlatformAdminReport(
+            { ...query, locale: req.locale },
+            req.user,
+        );
+
+        ResponseHandler.success(res, {
+            message: 'Platform admin report fetched successfully',
+            data: result,
         });
     });
 

@@ -14,6 +14,36 @@ const log = new Logger('NotificationController');
 
 class NotificationController {
 
+    getMyDeadlines = catchAsync(async (req, res) => {
+        const deadlines = await notificationService.getMyDeadlines(
+            req.user.id,
+            req.locale || req.user.preferredLanguage || 'it'
+        );
+
+        ResponseHandler.success(res, {
+            message: 'Deadlines fetched successfully',
+            data: deadlines,
+        });
+    });
+
+    getMyAlerts = catchAsync(async (req, res) => {
+        const alerts = await notificationService.getMyAlerts(req.user.id, req.query);
+
+        ResponseHandler.success(res, {
+            message: 'Alerts fetched successfully',
+            data: { alerts },
+        });
+    });
+
+    dismissAlert = catchAsync(async (req, res) => {
+        const alert = await notificationService.dismissAlert(req.params.alertId, req.user.id);
+
+        ResponseHandler.updated(res, {
+            message: 'Alert dismissed',
+            data: { alert },
+        });
+    });
+
     getMyNotifications = catchAsync(async (req, res) => {
         const query = notificationQuerySchema.parse(req.query);
 
@@ -99,6 +129,9 @@ class NotificationController {
                 break;
             case 'certificate_expiry':
                 result = await notificationService.processCertificateExpiryReminders();
+                break;
+            case 'certificate_download_expired':
+                result = await notificationService.processCertificateDownloadExpiredNotices();
                 break;
             case 'enrollment_expiry':
                 result = await notificationService.processExpiredEnrollments();

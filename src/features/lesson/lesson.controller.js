@@ -52,7 +52,8 @@ class LessonController {
     getLessonStatus = catchAsync(async (req, res) => {
         const status = await lessonService.getLessonStatus(
             req.params.lessonId,
-            req.user.id
+            req.user.id,
+            req.locale
         );
 
         ResponseHandler.success(res, {
@@ -110,7 +111,8 @@ class LessonController {
     getLessonStats = catchAsync(async (req, res) => {
         const stats = await lessonService.getLessonStats(
             req.params.lessonId,
-            req.user
+            req.user,
+            req.locale
         );
         ResponseHandler.success(res, {
             message: 'Lesson statistics fetched',
@@ -168,7 +170,8 @@ class LessonController {
         const progress = await lessonService.getUserProgress(
             req.params.courseId,
             req.user.id,
-            req.user
+            req.user,
+            req.locale
         );
 
         ResponseHandler.success(res, {

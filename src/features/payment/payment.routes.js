@@ -30,4 +30,7 @@ router.get('/my', paymentController.getMyPayments);
 const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSE_USER');
 router.get('/admin/all', adminGuard, paymentController.getAllPayments);
 
+router.post('/checkout/archive', paymentController.createArchiveCheckout);
+router.get('/verify/archive', paymentController.verifyArchivePayment);
+
 export const paymentRoutes = router;

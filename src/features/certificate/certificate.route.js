@@ -15,6 +15,7 @@ router.get('/verify/:certificateId', certificateController.verifyCertificate);
 router.use(authMiddleware.protect);
 router.use(i18nMiddleware);
 
+router.get('/archive/plan', certificateController.getArchivePlan);
 router.get('/my', certificateController.getMyCertificates);
 router.get('/:id/download', certificateController.downloadCertificate);
 router.get('/:id', certificateController.getCertificateById);
@@ -22,7 +23,7 @@ router.get('/:id', certificateController.getCertificateById);
 const generateGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSE_USER', 'COMPANY_ADMIN');
 router.post('/generate', generateGuard, uploadCertificateFiles, certificateController.generateCertificate);
 
-const listGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSE_USER');
+const listGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSE_USER', 'COMPANY_ADMIN');
 const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN');
 router.get('/', listGuard, certificateController.getAllCertificates);
 router.patch('/:id', adminGuard, uploadCertificateFiles, certificateController.updateCertificate);

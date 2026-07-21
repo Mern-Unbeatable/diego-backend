@@ -6,8 +6,16 @@ import { prisma } from '../../config/db.js';
 import { localizeObject } from '../../shared/services/translate/translate.service.js';
 import { Logger } from '../../config/logger.js';
 import { config } from '../../config/config.js';
-import { addYears } from 'date-fns';
 import { notificationService } from '../notification/notification.service.js';
+import {
+    activateArchiveSubscription,
+    computeFreeDownloadUntil,
+    formatCertificateAccess,
+    getActiveArchiveSubscription,
+    getArchivePlan,
+    userHasArchiveAccess,
+} from './certificate.archive.js';
+import { CERTIFICATE_FREE_DOWNLOAD_DAYS } from './certificate.constants.js';
 import {
     generateCertificatePdf,
     deleteCertificatePdf,
@@ -35,6 +43,7 @@ const ENROLLMENT_INCLUDE = {
             id: true,
             courseTitle: true,
             tenantId: true,
+            createdById: true,
             passScorePercent: true,
             certificateTemplateUrl: true,
             certificateTemplateConfig: true,
@@ -78,7 +87,7 @@ export class CertificateService {
                 existingCertificateId: existing?.id || null,
                 companyLogoUrl: null,
                 issueDate: new Date(),
-                expiryDate: addYears(new Date(), 1),
+                expiryDate: computeFreeDownloadUntil(new Date()),
             });
         } catch (error) {
             log.error(`autoGenerateOnCompletion failed for enrollment ${enrollmentId}: ${error.message}`);
@@ -94,15 +103,18 @@ export class CertificateService {
         const where = {};
 
         if (user?.level === 'LICENSE_USER') {
-            const licenseeUser = await prisma.user.findUnique({
-                where: { id: user.id },
-                select: { tenantId: true },
-            });
-            if (licenseeUser?.tenantId) where.tenantId = licenseeUser.tenantId;
+            where.course = { createdById: user.id };
+        } else if (user?.level === 'COMPANY_ADMIN') {
+            if (!user.companyId) throw new Error('Company Admin has no company assigned');
+            where.user = { companyId: user.companyId };
+        } else if (user?.level === 'PLATFORM_ADMIN') {
+            if (queryParams.courseId) where.courseId = queryParams.courseId;
+            // Livello 4 — platform master sees all certificates (optional tenant filter)
+            if (queryParams.tenantId) where.tenantId = queryParams.tenantId;
         }
 
         if (queryParams.userId) where.userId = queryParams.userId;
-        if (queryParams.courseId) where.courseId = queryParams.courseId;
+        if (queryParams.courseId && user?.level !== 'PLATFORM_ADMIN') where.courseId = queryParams.courseId;
         if (queryParams.status) where.status = queryParams.status;
         if (queryParams.archived !== undefined) where.archived = queryParams.archived === 'true';
 
@@ -155,10 +167,20 @@ export class CertificateService {
 
         const where = { userId, status: 'ISSUED' };
         if (queryParams.courseId) where.courseId = queryParams.courseId;
+        if (queryParams.year) {
+            const year = parseInt(queryParams.year, 10);
+            where.issuedAt = {
+                gte: new Date(`${year}-01-01`),
+                lt: new Date(`${year + 1}-01-01`),
+            };
+        }
 
         const orderBy = {
             [queryParams.sortBy || 'issuedAt']: queryParams.sortOrder === 'asc' ? 'asc' : 'desc',
         };
+
+        const archiveSubscription = await getActiveArchiveSubscription(userId);
+        const hasArchiveAccess = Boolean(archiveSubscription);
 
         const [certificates, total] = await Promise.all([
             prisma.certificate.findMany({
@@ -171,7 +193,7 @@ export class CertificateService {
                         select: { id: true, courseTitle: true, slug: true, thumbnailUrl: true },
                     },
                     enrollment: {
-                        select: { completedAt: true },
+                        select: { completedAt: true, status: true },
                     },
                 },
             }),
@@ -180,25 +202,57 @@ export class CertificateService {
 
         return {
             meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
-            certificates: certificates.map(cert => ({
-                id: cert.id,
-                pdfUrl: cert.pdfUrl,
-                qrCode: cert.qrCode,
-                companyLogoUrl: cert.companyLogoUrl,
-                status: cert.status,
-                issuedAt: cert.issuedAt,
-                downloadableUntil: cert.downloadableUntil,
-                downloadCount: cert.downloadCount,
-                lastDownloadedAt: cert.lastDownloadedAt,
-                isExpired: cert.downloadableUntil ? new Date() > cert.downloadableUntil : false,
-                course: {
-                    id: cert.course.id,
-                    title: localizeObject(cert.course.courseTitle, locale),
-                    slug: cert.course.slug,
-                    thumbnailUrl: cert.course.thumbnailUrl,
-                },
-                completedAt: cert.enrollment?.completedAt ?? null,
-            })),
+            archive: {
+                hasActiveSubscription: hasArchiveAccess,
+                expiresAt: archiveSubscription?.expiresAt ?? null,
+                plan: getArchivePlan(),
+                freeDownloadDays: CERTIFICATE_FREE_DOWNLOAD_DAYS,
+            },
+            certificates: certificates.map(cert => {
+                const access = formatCertificateAccess(cert, hasArchiveAccess);
+                return {
+                    id: cert.id,
+                    pdfUrl: access.canDownload ? cert.pdfUrl : null,
+                    qrCode: cert.qrCode,
+                    companyLogoUrl: cert.companyLogoUrl,
+                    status: cert.status,
+                    issuedAt: cert.issuedAt,
+                    downloadableUntil: cert.downloadableUntil,
+                    downloadCount: cert.downloadCount,
+                    lastDownloadedAt: cert.lastDownloadedAt,
+                    archived: cert.archived,
+                    ...access,
+                    course: {
+                        id: cert.course.id,
+                        title: localizeObject(cert.course.courseTitle, locale),
+                        slug: cert.course.slug,
+                        thumbnailUrl: cert.course.thumbnailUrl,
+                    },
+                    enrollmentStatus: cert.enrollment?.status ?? null,
+                    completedAt: cert.enrollment?.completedAt ?? null,
+                };
+            }),
+        };
+    }
+
+    async getArchiveStatus(userId) {
+        const subscription = await getActiveArchiveSubscription(userId);
+        const certCount = await prisma.certificate.count({
+            where: { userId, status: 'ISSUED' },
+        });
+        return {
+            plan: getArchivePlan(),
+            subscription: subscription
+                ? {
+                    id: subscription.id,
+                    isActive: subscription.isActive,
+                    startedAt: subscription.startedAt,
+                    expiresAt: subscription.expiresAt,
+                    storageMb: subscription.storageMb,
+                }
+                : null,
+            certificateCount: certCount,
+            hasArchiveAccess: Boolean(subscription),
         };
     }
 
@@ -321,7 +375,9 @@ export class CertificateService {
             existingCertificateId: existing?.id || null,
             companyLogoUrl: companyLogoUrl || null,
             issueDate: issueDate ? new Date(issueDate) : now,
-            expiryDate: expiryDate ? new Date(expiryDate) : addYears(now, 1),
+            expiryDate: expiryDate
+                ? new Date(expiryDate)
+                : computeFreeDownloadUntil(issueDate ? new Date(issueDate) : now),
             includeRelations: true,
         });
 
@@ -369,29 +425,41 @@ export class CertificateService {
         });
     }
 
-    async downloadCertificate(id, userId) {
+    async downloadCertificate(id, requestingUser) {
+        const userId = requestingUser.id;
+
         let certificate = await prisma.certificate.findUnique({
             where: { id },
             select: {
                 id: true,
                 userId: true,
+                courseId: true,
                 enrollmentId: true,
                 pdfUrl: true,
                 downloadCount: true,
                 status: true,
                 downloadableUntil: true,
+                issuedAt: true,
+                archived: true,
             },
         });
 
         if (!certificate) throw new Error('Certificate not found');
-        if (certificate.userId !== userId) {
-            throw new Error('Permission denied: You can only download your own certificates');
-        }
+
+        await this._checkDownloadPermission(certificate, requestingUser);
+
         if (certificate.status !== 'ISSUED') {
             throw new Error(`Certificate is ${certificate.status.toLowerCase()} and cannot be downloaded`);
         }
-        if (certificate.downloadableUntil && new Date() > certificate.downloadableUntil) {
-            throw new Error('Certificate download link has expired. Please purchase archive storage to access it.');
+
+        const hasArchive = await userHasArchiveAccess(certificate.userId);
+        const access = formatCertificateAccess(certificate, hasArchive);
+
+        if (!access.canDownload) {
+            throw new Error(
+                'Certificate free download period (30 days) has expired. ' +
+                'Purchase archive storage at GET /api/v1/certificates/archive/plan to download again.'
+            );
         }
 
         if (!this._pdfFileExists(certificate.id)) {
@@ -406,8 +474,8 @@ export class CertificateService {
                 enrollment,
                 existingCertificateId: certificate.id,
                 companyLogoUrl: null,
-                issueDate: new Date(),
-                expiryDate: certificate.downloadableUntil,
+                issueDate: certificate.issuedAt || new Date(),
+                expiryDate: certificate.downloadableUntil || computeFreeDownloadUntil(),
             });
             certificate = { ...certificate, pdfUrl: regenerated.pdfUrl };
         }
@@ -423,6 +491,7 @@ export class CertificateService {
         return {
             pdfUrl: certificate.pdfUrl,
             downloadCount: certificate.downloadCount + 1,
+            ...access,
         };
     }
 
@@ -449,9 +518,9 @@ export class CertificateService {
         if (certificate.status !== 'ISSUED') {
             return { valid: false, message: `Certificate is ${certificate.status.toLowerCase()}` };
         }
-        if (certificate.archived) {
-            return { valid: false, message: 'Certificate has been archived' };
-        }
+
+        const ownerHasArchive = await userHasArchiveAccess(certificate.userId);
+        const access = formatCertificateAccess(certificate, ownerHasArchive);
 
         return {
             valid: true,
@@ -466,8 +535,11 @@ export class CertificateService {
                 organization: certificate.tenant?.name || null,
                 issuedAt: certificate.issuedAt,
                 completedAt: certificate.enrollment?.completedAt ?? null,
-                qrCode: certificate.qrCode,
                 timestampProof: certificate.timestampProof,
+                downloadableUntil: certificate.downloadableUntil,
+                downloadAvailable: access.canDownload,
+                archived: certificate.archived,
+                qrCode: certificate.qrCode,
             },
         };
     }
@@ -581,6 +653,8 @@ export class CertificateService {
                 courseTitle,
                 tenantId,
                 pdfUrl: certificate.pdfUrl,
+                certificateId: certificate.id,
+                downloadableUntil: certificate.downloadableUntil,
             });
         } catch (err) {
             log.error(`Could not send certificate notification: ${err.message}`);
@@ -630,17 +704,54 @@ export class CertificateService {
         };
     }
 
-    async _checkViewPermission(certificate, user) {
-        if (!user) throw new Error('Authentication required');
-        if (user.level === 'PLATFORM_ADMIN') return;
+    async _checkDownloadPermission(certificate, user) {
+        if (!user?.id) throw new Error('Authentication required');
         if (certificate.userId === user.id) return;
 
-        if (user.level === 'LICENSE_USER') {
-            const licenseeUser = await prisma.user.findUnique({
-                where: { id: user.id },
-                select: { tenantId: true },
+        if (user.level === 'COMPANY_ADMIN') {
+            const employee = await prisma.user.findUnique({
+                where: { id: certificate.userId },
+                select: { companyId: true },
             });
-            if (licenseeUser?.tenantId && licenseeUser.tenantId === certificate.tenantId) return;
+            if (employee?.companyId && employee.companyId === user.companyId) return;
+            throw new Error('Permission denied: This employee is not in your company');
+        }
+
+        if (user.level === 'PLATFORM_ADMIN') return;
+
+        if (user.level === 'LICENSE_USER') {
+            const course = await prisma.course.findUnique({
+                where: { id: certificate.courseId },
+                select: { createdById: true },
+            });
+            if (course?.createdById === user.id) return;
+        }
+
+        throw new Error('Permission denied: You cannot download this certificate');
+    }
+
+    async _checkViewPermission(certificate, user) {
+        if (!user) throw new Error('Authentication required');
+        if (certificate.userId === user.id) return;
+
+        if (user.level === 'PLATFORM_ADMIN') return;
+
+        if (user.level === 'COMPANY_ADMIN') {
+            const employee = await prisma.user.findUnique({
+                where: { id: certificate.userId },
+                select: { companyId: true },
+            });
+            if (employee?.companyId && employee.companyId === user.companyId) return;
+            throw new Error('Permission denied: You cannot view this certificate');
+        }
+
+        if (user.level === 'LICENSE_USER') {
+            const course = await prisma.course.findUnique({
+                where: { id: certificate.courseId },
+                select: { createdById: true },
+            });
+            if (course?.createdById === user.id) return;
+            throw new Error('Permission denied: You cannot view this certificate');
         }
 
         if (user.level === 'TEACHER' || user.level === 'TUTOR') {
@@ -670,14 +781,15 @@ export class CertificateService {
         }
         if (!requestingUser) throw new Error('User not found');
 
-        if (requestingUser.level === 'PLATFORM_ADMIN') return;
+        if (requestingUser.level === 'PLATFORM_ADMIN') {
+            return;
+        }
 
         if (requestingUser.level === 'LICENSE_USER') {
-            const inTenant =
-                requestingUser.tenantId === enrollment.user.tenantId ||
-                requestingUser.tenantId === enrollment.course.tenantId;
-            if (inTenant) return;
-            throw new Error('Permission denied: User is not in your tenant');
+            if (enrollment.course?.createdById !== requestingUser.id) {
+                throw new Error('Permission denied: only the course creator can generate certificates');
+            }
+            return;
         }
 
         if (requestingUser.level === 'COMPANY_ADMIN') {

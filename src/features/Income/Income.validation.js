@@ -24,3 +24,9 @@ export const platformIncomeQuerySchema = z.object({
     sortBy: z.enum(['createdAt', 'amount']).default('createdAt'),
     sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });
+
+export const dashboardQuerySchema = z.object({
+    periodDays: z.coerce.number().int().min(1).max(365).default(30),
+    chartDays: z.coerce.number().int().min(1).max(90).default(7),
+    locale: z.enum(['it', 'en', 'fr', 'zh']).optional(),
+});

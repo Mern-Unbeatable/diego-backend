@@ -30,6 +30,7 @@ export const triggerJobSchema = z.object({
     job: z.enum([
         'course_expiry',
         'certificate_expiry',
+        'certificate_download_expired',
         'enrollment_expiry',
         'inactive_users',
         'company_digest',

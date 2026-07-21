@@ -14,7 +14,6 @@ const router = express.Router();
 // ============================================
 
 router.get('/public', courseController.getPublicCourses);
-router.get('/:id', courseController.getCourseById);
 router.get('/slug/:slug', courseController.getCourseBySlug);
 
 // ============================================
@@ -34,6 +33,7 @@ router.get('/my', courseController.getMyCourses);
 
 // 2. Then routes with parameters
 router.get('/', courseController.getAllCourses);
+router.get('/:id', courseController.getCourseById);
 
 // ============================================
 //  ADMIN ROUTES

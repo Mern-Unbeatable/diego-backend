@@ -2,13 +2,21 @@ import { prisma } from '../../config/db.js';
 import { Logger } from '../../config/logger.js';
 import { emailService } from '../../shared/services/emails/emailService.js';
 import { localizeObject } from '../../shared/services/translate/translate.service.js';
-import { addDays, subDays, startOfDay, endOfDay } from 'date-fns';
-
+import { addDays, subDays, startOfDay, endOfDay, differenceInCalendarDays } from 'date-fns';
+import { config } from '../../config/config.js';
+import {
+    CERTIFICATE_FREE_DOWNLOAD_DAYS,
+    CERTIFICATE_REMINDER_DAYS,
+} from '../certificate/certificate.constants.js';
+import { userHasArchiveAccess } from '../certificate/certificate.archive.js';
 
 const log = new Logger('NotificationService');
 
-const ENROLLMENT_REMINDER_WINDOWS = [7, 3, 1];
-const CERTIFICATE_REMINDER_WINDOWS = [90, 30, 7];
+/** Client: course access reminders — giallo/rosso prima della scadenza */
+const ENROLLMENT_REMINDER_WINDOWS = [30, 14, 7, 3, 1];
+
+/** Client: attestato "Disponibile per 30 gg" — promemoria prima della scadenza download */
+const CERTIFICATE_REMINDER_WINDOWS = CERTIFICATE_REMINDER_DAYS;
 const INACTIVE_AFTER_DAYS = 10;
 const INACTIVE_RESEND_COOLDOWN_DAYS = 7;
 const COMPANY_DIGEST_LOOKAHEAD_DAYS = 14;
@@ -98,6 +106,7 @@ class NotificationService {
         const results = {
             enrollmentExpiry: null,
             certificateExpiry: null,
+            certificateDownloadExpired: null,
             expiredEnrollments: null,
             inactiveUsers: null,
             companyDigest: null,
@@ -116,6 +125,13 @@ class NotificationService {
         } catch (err) {
             log.error('Certificate expiry job failed:', err.message);
             results.errors.push({ job: 'certificateExpiry', error: err.message });
+        }
+
+        try {
+            results.certificateDownloadExpired = await this.processCertificateDownloadExpiredNotices();
+        } catch (err) {
+            log.error('Certificate download expired job failed:', err.message);
+            results.errors.push({ job: 'certificateDownloadExpired', error: err.message });
         }
 
         try {
@@ -230,7 +246,7 @@ class NotificationService {
 
                     const locale = enrollment.user.preferredLanguage || 'it';
                     const courseTitle = this._courseTitleFor(enrollment.course, locale);
-                    const severity = daysLeft <= 3 ? 'RED' : 'YELLOW';
+                    const severity = this._severityForDaysLeft(daysLeft);
 
                     // In-app alert (always created, regardless of email opt-out)
                     await this._createAlert({
@@ -239,29 +255,31 @@ class NotificationService {
                         relatedEnrollmentId: enrollment.id,
                         tenantId: enrollment.user.tenantId ?? enrollment.course.tenantId ?? null,
                         message: {
-                            it: `Il corso "${courseTitle}" scade tra ${daysLeft} giorno/i.`,
-                            en: `The course "${courseTitle}" expires in ${daysLeft} day(s).`,
+                            it: `Il corso "${courseTitle}" scade tra ${daysLeft} giorno/i. Completa la formazione prima della scadenza.`,
+                            en: `The course "${courseTitle}" expires in ${daysLeft} day(s). Please complete your training before it expires.`,
                             type: 'ENROLLMENT_EXPIRY',
                             daysLeft,
                             enrollmentId: enrollment.id,
+                            expiresAt: enrollment.expiresAt,
                         },
                     });
                     alertsCreated++;
-
 
                     await this._createNotification({
                         userId: enrollment.user.id,
                         type: 'ENROLLMENT_EXPIRY',
                         tenantId: enrollment.user.tenantId ?? enrollment.course.tenantId ?? null,
                         title: {
-                            it: 'Promemoria scadenza corso',
-                            en: 'Course expiry reminder',
+                            it: `⏳ ${daysLeft} giorni rimasti al corso`,
+                            en: `⏳ ${daysLeft} days left on your course`,
                         },
                         message: {
-                            it: `Il corso "${courseTitle}" scade tra ${daysLeft} giorno/i.`,
-                            en: `The course "${courseTitle}" expires in ${daysLeft} day(s).`,
+                            it: `Il corso "${courseTitle}" scade il ${new Date(enrollment.expiresAt).toLocaleDateString('it-IT')}. Ti restano ${daysLeft} giorno/i.`,
+                            en: `The course "${courseTitle}" expires on ${new Date(enrollment.expiresAt).toLocaleDateString('en-GB')}. You have ${daysLeft} day(s) left.`,
                             enrollmentId: enrollment.id,
                             daysLeft,
+                            expiresAt: enrollment.expiresAt,
+                            severity,
                         },
                     });
 
@@ -273,6 +291,7 @@ class NotificationService {
                             courseTitle,
                             daysLeft,
                             expiresAt: enrollment.expiresAt,
+                            locale: enrollment.user.preferredLanguage || 'it',
                         });
                         emailsSent++;
                     }
@@ -333,12 +352,11 @@ class NotificationService {
                 try {
                     if (!certificate.user) { skipped++; continue; }
 
-                    const dedupeKey = `cert:${certificate.id}`;
+                    const dedupeKey = `cert:${certificate.id}:daysLeft:${daysLeft}`;
                     const alreadySent = await prisma.notification.findFirst({
                         where: {
                             userId: certificate.user.id,
                             type: 'CERTIFICATE_EXPIRY',
-                            createdAt: { gte: startOfDay(new Date()) },
                             message: { path: ['dedupeKey'], equals: dedupeKey },
                         },
                         select: { id: true },
@@ -347,18 +365,20 @@ class NotificationService {
 
                     const locale = certificate.user.preferredLanguage || 'it';
                     const courseTitle = this._courseTitleFor(certificate.course, locale);
-                    const severity = daysLeft <= 7 ? 'RED' : 'YELLOW';
+                    const severity = this._severityForDaysLeft(daysLeft);
+                    const archiveUrl = `${config.CLIENT_URL}/certificates/archive`;
 
                     await this._createAlert({
                         userId: certificate.user.id,
                         severity,
                         tenantId: certificate.user.tenantId ?? certificate.tenantId ?? null,
                         message: {
-                            it: `Il certificato per "${courseTitle}" scade tra ${daysLeft} giorno/i.`,
-                            en: `The certificate for "${courseTitle}" expires in ${daysLeft} day(s).`,
+                            it: `L'attestato per "${courseTitle}" è disponibile per il download ancora per ${daysLeft} giorno/i. Dopo la scadenza potrai acquistare il servizio di archiviazione.`,
+                            en: `The certificate for "${courseTitle}" is available for download for ${daysLeft} more day(s). After expiry you can purchase archive storage.`,
                             type: 'CERTIFICATE_EXPIRY',
                             daysLeft,
                             certificateId: certificate.id,
+                            downloadableUntil: certificate.downloadableUntil,
                         },
                     });
                     alertsCreated++;
@@ -368,15 +388,18 @@ class NotificationService {
                         type: 'CERTIFICATE_EXPIRY',
                         tenantId: certificate.user.tenantId ?? certificate.tenantId ?? null,
                         title: {
-                            it: 'Promemoria scadenza attestato',
-                            en: 'Certificate expiry reminder',
+                            it: `📄 Disponibile per ${daysLeft} giorni`,
+                            en: `📄 Available for ${daysLeft} days`,
                         },
                         message: {
-                            it: `Il certificato per "${courseTitle}" scade tra ${daysLeft} giorno/i.`,
-                            en: `The certificate for "${courseTitle}" expires in ${daysLeft} day(s).`,
+                            it: `Il download dell'attestato "${courseTitle}" scade il ${new Date(certificate.downloadableUntil).toLocaleDateString('it-IT')}. Scaricalo ora o acquista l'archivio.`,
+                            en: `Certificate download for "${courseTitle}" expires on ${new Date(certificate.downloadableUntil).toLocaleDateString('en-GB')}. Download now or purchase archive storage.`,
                             certificateId: certificate.id,
                             daysLeft,
                             dedupeKey,
+                            downloadableUntil: certificate.downloadableUntil,
+                            archiveUrl,
+                            severity,
                         },
                     });
 
@@ -387,6 +410,8 @@ class NotificationService {
                             courseTitle,
                             daysLeft,
                             expiresAt: certificate.downloadableUntil,
+                            archiveUrl,
+                            locale,
                         });
                         emailsSent++;
                     }
@@ -398,6 +423,110 @@ class NotificationService {
         }
 
         return { emailsSent, alertsCreated, skipped, errors };
+    }
+
+    /** Notify users whose 30-day free certificate download window just ended */
+    async processCertificateDownloadExpiredNotices() {
+        let emailsSent = 0;
+        let notificationsCreated = 0;
+        let skipped = 0;
+        let errors = 0;
+
+        const yesterday = subDays(new Date(), 1);
+        const windowStart = startOfDay(yesterday);
+        const windowEnd = endOfDay(yesterday);
+
+        const certificates = await prisma.certificate.findMany({
+            where: {
+                status: 'ISSUED',
+                downloadableUntil: { gte: windowStart, lte: windowEnd },
+            },
+            include: {
+                user: {
+                    select: {
+                        id: true, email: true, firstName: true, lastName: true,
+                        preferredLanguage: true, alertsOptOut: true, tenantId: true,
+                    },
+                },
+                course: { select: { id: true, courseTitle: true, tenantId: true } },
+            },
+        });
+
+        for (const certificate of certificates) {
+            try {
+                if (!certificate.user) { skipped++; continue; }
+
+                const hasArchive = await userHasArchiveAccess(certificate.user.id);
+                if (hasArchive) { skipped++; continue; }
+
+                const dedupeKey = `cert:expired:${certificate.id}`;
+                const alreadySent = await prisma.notification.findFirst({
+                    where: {
+                        userId: certificate.user.id,
+                        type: 'CERTIFICATE_DOWNLOAD_EXPIRED',
+                        message: { path: ['dedupeKey'], equals: dedupeKey },
+                    },
+                    select: { id: true },
+                });
+                if (alreadySent) { skipped++; continue; }
+
+                const locale = certificate.user.preferredLanguage || 'it';
+                const courseTitle = this._courseTitleFor(certificate.course, locale);
+                const archiveUrl = `${config.CLIENT_URL}/certificates/archive`;
+
+                await prisma.certificate.update({
+                    where: { id: certificate.id },
+                    data: { archived: true, archivedAt: new Date() },
+                });
+
+                await this._createAlert({
+                    userId: certificate.user.id,
+                    severity: 'RED',
+                    tenantId: certificate.user.tenantId ?? certificate.tenantId ?? null,
+                    message: {
+                        it: `Il periodo gratuito di download per "${courseTitle}" è scaduto. Acquista il servizio di archiviazione per scaricare di nuovo l'attestato.`,
+                        en: `The free download period for "${courseTitle}" has ended. Purchase archive storage to download your certificate again.`,
+                        type: 'CERTIFICATE_DOWNLOAD_EXPIRED',
+                        certificateId: certificate.id,
+                    },
+                });
+
+                await this._createNotification({
+                    userId: certificate.user.id,
+                    type: 'CERTIFICATE_DOWNLOAD_EXPIRED',
+                    tenantId: certificate.user.tenantId ?? certificate.tenantId ?? null,
+                    title: {
+                        it: 'Download attestato scaduto',
+                        en: 'Certificate download expired',
+                    },
+                    message: {
+                        it: `I 30 giorni gratuiti per scaricare l'attestato "${courseTitle}" sono terminati. Acquista l'archivio attestati per accedere di nuovo al PDF.`,
+                        en: `The 30 free days to download "${courseTitle}" certificate have ended. Purchase certificate archive storage to access the PDF again.`,
+                        certificateId: certificate.id,
+                        dedupeKey,
+                        archiveUrl,
+                        severity: 'RED',
+                    },
+                });
+                notificationsCreated++;
+
+                if (!certificate.user.alertsOptOut && certificate.user.email) {
+                    await emailService.sendCertificateDownloadExpired({
+                        to: certificate.user.email,
+                        userName: this._fullName(certificate.user),
+                        courseTitle,
+                        archiveUrl,
+                        locale,
+                    });
+                    emailsSent++;
+                }
+            } catch (err) {
+                errors++;
+                log.error(`Certificate download expired notice failed for ${certificate.id}:`, err.message);
+            }
+        }
+
+        return { emailsSent, notificationsCreated, skipped, errors };
     }
 
 
@@ -615,6 +744,113 @@ class NotificationService {
         return { updatedCount: result.count };
     }
 
+    _severityForDaysLeft(daysLeft) {
+        if (daysLeft <= 0) return 'RED';
+        if (daysLeft <= 7) return 'RED';
+        if (daysLeft <= 14) return 'YELLOW';
+        return 'GREEN';
+    }
+
+    _daysUntil(date) {
+        if (!date) return null;
+        return differenceInCalendarDays(new Date(date), new Date());
+    }
+
+    async getMyDeadlines(userId, locale = 'it') {
+        const [enrollments, certificates, hasArchive] = await Promise.all([
+            prisma.enrollment.findMany({
+                where: {
+                    userId,
+                    status: { in: ['NOT_STARTED', 'IN_PROGRESS'] },
+                },
+                select: {
+                    id: true,
+                    status: true,
+                    expiresAt: true,
+                    startedAt: true,
+                    course: { select: { id: true, courseTitle: true, slug: true, thumbnailUrl: true } },
+                },
+                orderBy: { expiresAt: 'asc' },
+            }),
+            prisma.certificate.findMany({
+                where: { userId, status: 'ISSUED' },
+                select: {
+                    id: true,
+                    issuedAt: true,
+                    downloadableUntil: true,
+                    archived: true,
+                    course: { select: { id: true, courseTitle: true, slug: true } },
+                },
+                orderBy: { downloadableUntil: 'asc' },
+            }),
+            userHasArchiveAccess(userId),
+        ]);
+
+        const courses = enrollments.map(e => {
+            const daysLeft = this._daysUntil(e.expiresAt);
+            return {
+                enrollmentId: e.id,
+                courseId: e.course.id,
+                title: localizeObject(e.course.courseTitle, locale),
+                slug: e.course.slug,
+                thumbnailUrl: e.course.thumbnailUrl,
+                status: e.status,
+                expiresAt: e.expiresAt,
+                daysRemaining: daysLeft,
+                severity: this._severityForDaysLeft(daysLeft ?? 0),
+                label:
+                    daysLeft == null
+                        ? null
+                        : daysLeft <= 0
+                            ? (locale === 'it' ? 'Scaduto' : 'Expired')
+                            : locale === 'it'
+                                ? `${daysLeft} giorni rimasti`
+                                : `${daysLeft} days left`,
+            };
+        });
+
+        const certs = certificates.map(c => {
+            const daysLeft = this._daysUntil(c.downloadableUntil);
+            const canDownload = hasArchive || (daysLeft != null && daysLeft >= 0);
+            return {
+                certificateId: c.id,
+                courseId: c.course.id,
+                title: localizeObject(c.course.courseTitle, locale),
+                issuedAt: c.issuedAt,
+                downloadableUntil: c.downloadableUntil,
+                freeDownloadDays: CERTIFICATE_FREE_DOWNLOAD_DAYS,
+                daysRemaining: hasArchive ? null : Math.max(0, daysLeft ?? 0),
+                severity: hasArchive ? 'GREEN' : this._severityForDaysLeft(daysLeft ?? 0),
+                canDownload,
+                needsArchivePurchase: !hasArchive && daysLeft != null && daysLeft < 0,
+                label: hasArchive
+                    ? (locale === 'it' ? 'Archivio attivo' : 'Archive active')
+                    : daysLeft == null
+                        ? null
+                        : daysLeft <= 0
+                            ? (locale === 'it' ? 'Scaduto — acquista archivio' : 'Expired — buy archive')
+                            : locale === 'it'
+                                ? `Disponibile per ${daysLeft} giorni`
+                                : `Available for ${daysLeft} days`,
+            };
+        });
+
+        const urgentCourse = courses.find(c => c.severity === 'RED') || null;
+        const urgentCert = certs.find(c => c.severity === 'RED' && !c.canDownload) || certs.find(c => c.severity === 'RED') || null;
+
+        return {
+            summary: {
+                activeCourses: courses.length,
+                certificates: certs.length,
+                hasArchiveAccess: hasArchive,
+                freeCertificateDownloadDays: CERTIFICATE_FREE_DOWNLOAD_DAYS,
+                mostUrgent: urgentCourse || urgentCert || null,
+            },
+            courses,
+            certificates: certs,
+        };
+    }
+
     async getMyAlerts(userId, queryParams = {}) {
         const where = { userId };
         if (queryParams.dismissed !== undefined) where.dismissed = queryParams.dismissed === 'true';
@@ -662,8 +898,14 @@ class NotificationService {
         return this.markAllAsRead(userId);
     }
 
-    // NEW: certificate.service.js
-    async notifyCertificateReady({ userId, courseTitle, tenantId = null, pdfUrl }) {
+    async notifyCertificateReady({
+        userId,
+        courseTitle,
+        tenantId = null,
+        pdfUrl,
+        certificateId = null,
+        downloadableUntil = null,
+    }) {
         const user = await prisma.user.findUnique({
             where: { id: userId },
             select: {
@@ -680,19 +922,46 @@ class NotificationService {
             return null;
         }
 
-        // In-app notification —
+        const locale = user.preferredLanguage || 'it';
+        const freeDays = CERTIFICATE_FREE_DOWNLOAD_DAYS;
+        const expiryDate = downloadableUntil
+            ? new Date(downloadableUntil).toLocaleDateString(locale === 'it' ? 'it-IT' : 'en-GB')
+            : null;
+        const certificatesUrl = `${config.CLIENT_URL}/certificates`;
+        const archiveUrl = `${config.CLIENT_URL}/certificates/archive`;
+
         await this._createNotification({
             userId,
             type: 'CERTIFICATE_READY',
             tenantId,
             title: {
-                it: 'Il tuo attestato è pronto',
-                en: 'Your certificate is ready',
+                it: '🎉 Il tuo attestato è pronto',
+                en: '🎉 Your certificate is ready',
             },
             message: {
-                it: `Hai completato con successo "${courseTitle}". Il tuo attestato è ora disponibile per il download.`,
-                en: `You have successfully completed "${courseTitle}". Your certificate is now available for download.`,
+                it: `Hai completato "${courseTitle}". Scarica l'attestato entro ${freeDays} giorni (disponibile fino al ${expiryDate || '—'}).`,
+                en: `You completed "${courseTitle}". Download your certificate within ${freeDays} days${expiryDate ? ` (until ${expiryDate})` : ''}.`,
                 pdfUrl,
+                certificateId,
+                downloadableUntil,
+                daysRemaining: freeDays,
+                freeDownloadDays: freeDays,
+                certificatesUrl,
+                archiveUrl,
+                severity: 'GREEN',
+            },
+        });
+
+        await this._createAlert({
+            userId,
+            severity: 'GREEN',
+            tenantId,
+            message: {
+                it: `Attestato disponibile per ${freeDays} giorni — "${courseTitle}"`,
+                en: `Certificate available for ${freeDays} days — "${courseTitle}"`,
+                type: 'CERTIFICATE_READY',
+                certificateId,
+                daysRemaining: freeDays,
             },
         });
 
@@ -702,6 +971,10 @@ class NotificationService {
                 userName: this._fullName(user),
                 courseTitle,
                 downloadUrl: pdfUrl,
+                certificatesUrl,
+                freeDownloadDays: freeDays,
+                downloadableUntil,
+                locale,
             });
             log.info(`Certificate-ready email sent to ${user.email} for course "${courseTitle}"`);
         } else {

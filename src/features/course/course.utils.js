@@ -41,6 +41,7 @@ export const courseListSelect = {
     createdAt: true,
     updatedAt: true,
     tenantId: true,
+    createdById: true,
     teacher: { select: { id: true, firstName: true, lastName: true, email: true } },
     tutorUser: { select: { id: true, firstName: true, lastName: true, email: true } },
     createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },

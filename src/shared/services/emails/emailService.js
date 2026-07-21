@@ -302,43 +302,83 @@ class EmailService {
     }
   }
 
-  async sendCourseExpiryReminder({ to, userName, courseTitle, daysLeft, expiresAt }) {
-    const subject = `⚠️ Course expiring in ${daysLeft} day(s): ${courseTitle}`;
+  async sendCourseExpiryReminder({ to, userName, courseTitle, daysLeft, expiresAt, locale = 'it' }) {
+    const isIt = locale === 'it';
+    const subject = isIt
+      ? `⏳ Il corso scade tra ${daysLeft} giorno/i: ${courseTitle}`
+      : `⏳ Course expiring in ${daysLeft} day(s): ${courseTitle}`;
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto">
-        <h2 style="color:#e67e22">Course Expiry Reminder</h2>
-        <p>Hi <strong>${userName}</strong>,</p>
-        <p>Your course <strong>"${courseTitle}"</strong> will expire in <strong>${daysLeft} day(s)</strong>.</p>
-        <p>Expiry date: <strong>${new Date(expiresAt).toLocaleDateString('it-IT')}</strong></p>
-        <p>Please complete the course before it expires.</p>
+        <h2 style="color:${daysLeft <= 7 ? '#c0392b' : '#e67e22'}">${isIt ? 'Promemoria scadenza corso' : 'Course expiry reminder'}</h2>
+        <p>${isIt ? 'Ciao' : 'Hi'} <strong>${userName}</strong>,</p>
+        <p>${isIt ? 'Il tuo corso' : 'Your course'} <strong>"${courseTitle}"</strong> ${isIt ? 'scade tra' : 'expires in'} <strong>${daysLeft} ${isIt ? 'giorno/i' : 'day(s)'}</strong>.</p>
+        <p>${isIt ? 'Data di scadenza' : 'Expiry date'}: <strong>${new Date(expiresAt).toLocaleDateString(isIt ? 'it-IT' : 'en-GB')}</strong></p>
+        <p>${isIt ? 'Accedi alla piattaforma e completa la formazione prima della scadenza.' : 'Log in and complete your training before it expires.'}</p>
+        <p><a href="${config.CLIENT_URL}/dashboard" style="background:#3498db;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block">${isIt ? 'Vai ai miei corsi' : 'Go to my courses'}</a></p>
         <hr/>
-        <p style="color:#999;font-size:12px">You can manage notification preferences in your account settings.</p>
+        <p style="color:#999;font-size:12px">${isIt ? 'Puoi disattivare le email di promemoria dalle impostazioni del tuo account.' : 'You can disable reminder emails in your account settings.'}</p>
       </div>`;
     return this.send({ to, subject, html });
   }
 
-  async sendCertificateExpiryReminder({ to, userName, courseTitle, daysLeft, expiresAt }) {
-    const subject = `📄 Certificate expiring in ${daysLeft} day(s): ${courseTitle}`;
+  async sendCertificateExpiryReminder({ to, userName, courseTitle, daysLeft, expiresAt, archiveUrl, locale = 'it' }) {
+    const isIt = locale === 'it';
+    const subject = isIt
+      ? `📄 Attestato: ancora ${daysLeft} giorno/i per il download — ${courseTitle}`
+      : `📄 Certificate: ${daysLeft} day(s) left to download — ${courseTitle}`;
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto">
-        <h2 style="color:#c0392b">Certificate Expiry Reminder</h2>
-        <p>Hi <strong>${userName}</strong>,</p>
-        <p>Your certificate for <strong>"${courseTitle}"</strong> will expire in <strong>${daysLeft} day(s)</strong>.</p>
-        <p>Expiry date: <strong>${new Date(expiresAt).toLocaleDateString('it-IT')}</strong></p>
-        <p>Please renew your training to maintain compliance.</p>
+        <h2 style="color:${daysLeft <= 7 ? '#c0392b' : '#e67e22'}">${isIt ? 'Promemoria download attestato' : 'Certificate download reminder'}</h2>
+        <p>${isIt ? 'Ciao' : 'Hi'} <strong>${userName}</strong>,</p>
+        <p>${isIt ? 'L\'attestato per' : 'The certificate for'} <strong>"${courseTitle}"</strong> ${isIt ? 'è disponibile per il download ancora per' : 'is available for download for'} <strong>${daysLeft} ${isIt ? 'giorno/i' : 'day(s)'}</strong>.</p>
+        <p>${isIt ? 'Scadenza download gratuito' : 'Free download expires'}: <strong>${new Date(expiresAt).toLocaleDateString(isIt ? 'it-IT' : 'en-GB')}</strong></p>
+        <p>${isIt ? 'Dopo la scadenza potrai acquistare il servizio di archiviazione attestati per scaricare di nuovo il PDF.' : 'After expiry you can purchase certificate archive storage to download the PDF again.'}</p>
+        <p>
+          <a href="${config.CLIENT_URL}/certificates" style="background:#27ae60;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;margin-right:8px">${isIt ? 'Scarica attestato' : 'Download certificate'}</a>
+          ${archiveUrl ? `<a href="${archiveUrl}" style="background:#8e44ad;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block">${isIt ? 'Acquista archivio' : 'Buy archive'}</a>` : ''}
+        </p>
       </div>`;
     return this.send({ to, subject, html });
   }
 
-  async sendCertificateReady({ to, userName, courseTitle, downloadUrl }) {
-    const subject = `🎉 Your certificate is ready: ${courseTitle}`;
+  async sendCertificateReady({ to, userName, courseTitle, downloadUrl, certificatesUrl, freeDownloadDays = 30, downloadableUntil = null, locale = 'it' }) {
+    const isIt = locale === 'it';
+    const expiryStr = downloadableUntil
+      ? new Date(downloadableUntil).toLocaleDateString(isIt ? 'it-IT' : 'en-GB')
+      : null;
+    const subject = isIt
+      ? `🎉 Il tuo attestato è pronto: ${courseTitle}`
+      : `🎉 Your certificate is ready: ${courseTitle}`;
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto">
-        <h2 style="color:#27ae60">Certificate Ready!</h2>
-        <p>Hi <strong>${userName}</strong>,</p>
-        <p>Congratulations! You have successfully completed <strong>"${courseTitle}"</strong>.</p>
-        <p>Your certificate is now available for download.</p>
-        ${downloadUrl ? `<p><a href="${downloadUrl}" style="background:#27ae60;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px">Download Certificate</a></p>` : ''}
+        <h2 style="color:#27ae60">${isIt ? 'Attestato pronto!' : 'Certificate ready!'}</h2>
+        <p>${isIt ? 'Ciao' : 'Hi'} <strong>${userName}</strong>,</p>
+        <p>${isIt ? 'Complimenti! Hai completato con successo' : 'Congratulations! You have successfully completed'} <strong>"${courseTitle}"</strong>.</p>
+        <div style="background:#fff3cd;border-left:4px solid #e67e22;padding:12px 16px;margin:20px 0">
+          <strong>${isIt ? `Disponibile per ${freeDownloadDays} giorni` : `Available for ${freeDownloadDays} days`}</strong>
+          ${expiryStr ? `<br/>${isIt ? 'Scadenza download' : 'Download expires'}: <strong>${expiryStr}</strong>` : ''}
+        </div>
+        <p>${isIt ? 'Scarica il tuo attestato dalla piattaforma. Dopo i 30 giorni gratuiti potrai acquistare il servizio di archiviazione.' : 'Download your certificate from the platform. After the free 30 days you can purchase archive storage.'}</p>
+        <p>
+          ${downloadUrl ? `<a href="${downloadUrl}" style="background:#27ae60;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;margin-right:8px">${isIt ? 'Scarica PDF' : 'Download PDF'}</a>` : ''}
+          <a href="${certificatesUrl || `${config.CLIENT_URL}/certificates`}" style="background:#3498db;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block">${isIt ? 'I miei attestati' : 'My certificates'}</a>
+        </p>
+      </div>`;
+    return this.send({ to, subject, html });
+  }
+
+  async sendCertificateDownloadExpired({ to, userName, courseTitle, archiveUrl, locale = 'it' }) {
+    const isIt = locale === 'it';
+    const subject = isIt
+      ? `⚠️ Download attestato scaduto: ${courseTitle}`
+      : `⚠️ Certificate download expired: ${courseTitle}`;
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto">
+        <h2 style="color:#c0392b">${isIt ? 'Periodo gratuito terminato' : 'Free download period ended'}</h2>
+        <p>${isIt ? 'Ciao' : 'Hi'} <strong>${userName}</strong>,</p>
+        <p>${isIt ? 'I 30 giorni gratuiti per scaricare l\'attestato' : 'The 30 free days to download the certificate for'} <strong>"${courseTitle}"</strong> ${isIt ? 'sono terminati.' : 'have ended.'}</p>
+        <p>${isIt ? 'Il tuo attestato resta conservato sui nostri server. Per scaricarlo di nuovo, acquista il servizio di archiviazione attestati.' : 'Your certificate remains stored on our servers. To download it again, purchase certificate archive storage.'}</p>
+        <p><a href="${archiveUrl || `${config.CLIENT_URL}/certificates/archive`}" style="background:#8e44ad;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block">${isIt ? 'Acquista archivio attestati' : 'Purchase certificate archive'}</a></p>
       </div>`;
     return this.send({ to, subject, html });
   }

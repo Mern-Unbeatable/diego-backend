@@ -166,6 +166,32 @@ class PaymentController {
       data: result,
     });
   });
+
+  createArchiveCheckout = catchAsync(async (req, res) => {
+    const userId = req.user.id;
+    const tenantId = req.tenantId || req.user.tenantId || null;
+    this.log.info(`Archive checkout: user=${userId}`);
+
+    const result = await paymentService.createArchiveCheckout({ userId, tenantId });
+
+    ResponseHandler.created(res, {
+      message: 'Archive storage checkout created',
+      data: result,
+    });
+  });
+
+  verifyArchivePayment = catchAsync(async (req, res) => {
+    const sessionId = req.query.session_id || req.body?.session_id;
+    const userId = req.user.id;
+    if (!sessionId) throw new Error('session_id is required');
+
+    const result = await paymentService.verifyArchivePayment(sessionId, userId);
+
+    ResponseHandler.success(res, {
+      message: result.paid ? 'Archive storage activated' : 'Payment not completed yet',
+      data: result,
+    });
+  });
 }
 
 export const paymentController = new PaymentController();

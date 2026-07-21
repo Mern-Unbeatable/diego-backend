@@ -3,6 +3,7 @@ import { localizeObject } from '../../shared/services/translate/translate.servic
 import { slugService } from '../../shared/utils/slug/slug.service.js';
 import { isValidSlug, slugExists } from '../../shared/utils/slug/slug.utils.js';
 import { courseDetailSelect, courseListSelect } from './course.utils.js';
+import { assertCanManageCourse } from './course.permission.js';
 
 export const TRACKED_TYPES = new Set(['SCORM', 'SCORM_12']);
 export const isTracked = (contentType) => TRACKED_TYPES.has(contentType);
@@ -33,15 +34,17 @@ export class CourseService {
         const isPlatformAdmin = userLevel === 'PLATFORM_ADMIN';
         const isLicensee = userLevel === 'LICENSE_USER';
 
-        // Tenant filtering
-        if (isPlatformAdmin) {
-            const filterTenant = queryParams.tenantId || tenantId;
-            if (filterTenant) where.tenantId = filterTenant;
-        } else if (isLicensee) {
+        // Tenant + ownership filtering
+        if (isLicensee) {
             const licenseetenantId = await resolveLicenseeTenantId(user);
             if (!licenseetenantId) throw new Error('Licensee user has no tenant assigned. Contact admin.');
             where.tenantId = licenseetenantId;
+            where.createdById = user.id;
             if (queryParams.isActive === undefined) where.isActive = true;
+        } else if (isPlatformAdmin) {
+            where.createdById = user.id;
+            const filterTenant = queryParams.tenantId || tenantId;
+            if (filterTenant) where.tenantId = filterTenant;
         } else {
             const effectiveTenant = queryParams.tenantId || tenantId || user?.tenantId;
             if (effectiveTenant) where.tenantId = effectiveTenant;
@@ -188,19 +191,35 @@ export class CourseService {
         const isPlatformAdmin = user?.level === 'PLATFORM_ADMIN';
         const isLicensee = user?.level === 'LICENSE_USER';
 
-        let effectiveTenant = null;
-        if (!isPlatformAdmin) {
-            effectiveTenant = tenantId || (isLicensee
-                ? await resolveLicenseeTenantId(user)
-                : user?.tenantId);
+        const where = { id };
+
+        if (isLicensee || isPlatformAdmin) {
+            if (!user?.id) return null;
+            where.createdById = user.id;
+            if (isLicensee) {
+                const effectiveTenant = tenantId || await resolveLicenseeTenantId(user);
+                if (effectiveTenant) where.tenantId = effectiveTenant;
+            } else if (tenantId) {
+                where.tenantId = tenantId;
+            }
+        } else if (user) {
+            const effectiveTenant = tenantId || user?.tenantId;
+            if (effectiveTenant) where.tenantId = effectiveTenant;
         }
 
-        const course = effectiveTenant
-            ? await prisma.course.findFirst({ where: { id, tenantId: effectiveTenant }, select: courseDetailSelect })
-            : await prisma.course.findUnique({ where: { id }, select: courseDetailSelect });
-
+        const course = await prisma.course.findFirst({ where, select: courseDetailSelect });
         if (!course) return null;
-        if (!isPlatformAdmin && !course.isActive) return null;
+
+        if (!user || (!isPlatformAdmin && !isLicensee)) {
+            if (!course.isActive) {
+                if (!user?.id) return null;
+                const enrolled = await prisma.enrollment.findUnique({
+                    where: { userId_courseId: { userId: user.id, courseId: id } },
+                    select: { id: true },
+                });
+                if (!enrolled) return null;
+            }
+        }
 
         return this._buildCourseDetailResponse(course, locale);
     }
@@ -209,19 +228,28 @@ export class CourseService {
         const isPlatformAdmin = user?.level === 'PLATFORM_ADMIN';
         const isLicensee = user?.level === 'LICENSE_USER';
 
-        let effectiveTenant = null;
-        if (!isPlatformAdmin) {
-            effectiveTenant = tenantId || (isLicensee
-                ? await resolveLicenseeTenantId(user)
-                : user?.tenantId);
+        const where = { slug };
+
+        if (isLicensee || isPlatformAdmin) {
+            if (!user?.id) return null;
+            where.createdById = user.id;
+            if (isLicensee) {
+                const effectiveTenant = tenantId || await resolveLicenseeTenantId(user);
+                if (effectiveTenant) where.tenantId = effectiveTenant;
+            } else if (tenantId) {
+                where.tenantId = tenantId;
+            }
+        } else if (user) {
+            const effectiveTenant = tenantId || user?.tenantId;
+            if (effectiveTenant) where.tenantId = effectiveTenant;
         }
 
-        const course = effectiveTenant
-            ? await prisma.course.findFirst({ where: { slug, tenantId: effectiveTenant }, select: courseDetailSelect })
-            : await prisma.course.findUnique({ where: { slug }, select: courseDetailSelect });
-
+        const course = await prisma.course.findFirst({ where, select: courseDetailSelect });
         if (!course) return null;
-        if (!isPlatformAdmin && !course.isActive) return null;
+
+        if (!user || (!isPlatformAdmin && !isLicensee)) {
+            if (!course.isActive) return null;
+        }
 
         return this._buildCourseDetailResponse(course, locale);
     }
@@ -732,13 +760,11 @@ export class CourseService {
     }
 
     async _checkCoursePermission(course, userId, userLevel) {
-        if (userLevel === 'PLATFORM_ADMIN') return;
-        if (userLevel === 'LICENSE_USER') {
-            const user = await prisma.user.findUnique({ where: { id: userId }, select: { tenantId: true } });
-            if (course.tenantId !== user?.tenantId) throw new Error('Permission denied: different tenant');
-        } else {
-            if (course.createdById !== userId) throw new Error('Permission denied');
-        }
+        assertCanManageCourse(
+            course,
+            userId ? { id: userId, level: userLevel } : null,
+            'manage'
+        );
     }
 
     async _validateTenantUser(userId, tenantId, role) {

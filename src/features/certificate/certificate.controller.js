@@ -28,6 +28,14 @@ class CertificateController {
         });
     });
 
+    getArchivePlan = catchAsync(async (req, res) => {
+        const status = await certificateService.getArchiveStatus(req.user.id);
+        ResponseHandler.success(res, {
+            message: 'Archive plan fetched',
+            data: status,
+        });
+    });
+
     getAllCertificates = catchAsync(async (req, res) => {
 
         const result = await certificateService.getAllCertificates(
@@ -89,7 +97,7 @@ class CertificateController {
     downloadCertificate = catchAsync(async (req, res) => {
         const result = await certificateService.downloadCertificate(
             req.params.id,
-            req.user.id
+            req.user
         );
 
         ResponseHandler.success(res, {

@@ -4,6 +4,9 @@ import { config } from '../../config/config.js';
 import { Logger } from '../../config/logger.js';
 import { addDays } from 'date-fns';
 import { notificationService } from '../notification/notification.service.js';
+import { activateArchiveSubscription } from '../certificate/certificate.archive.js';
+import { ARCHIVE_ANNUAL_PRICE_EUR } from '../certificate/certificate.constants.js';
+import { PLATFORM_FEE_PERCENT } from '../Income/Income.constants.js';
 
 const stripe = new Stripe(config.STRIPE_SECRET_KEY);
 const log = new Logger('PaymentService');
@@ -385,10 +388,19 @@ class PaymentService {
     });
     if (existingIncome) return existingIncome;
 
+    const platformFeeAmount = (grossAmount * PLATFORM_FEE_PERCENT) / 100;
+    const licenseeAmount = grossAmount - platformFeeAmount;
+
     return tx.licenseeIncome.create({
       data: {
-        licenseId: license.id, paymentId, courseId, grossAmount,
-        platformFeePercent: 0, platformFeeAmount: 0, licenseeAmount: grossAmount, currency: 'EUR',
+        licenseId: license.id,
+        paymentId,
+        courseId,
+        grossAmount,
+        platformFeePercent: PLATFORM_FEE_PERCENT,
+        platformFeeAmount,
+        licenseeAmount,
+        currency: 'EUR',
       },
     });
   }
@@ -1205,6 +1217,99 @@ class PaymentService {
     return { meta: { page, limit, total, totalPages: Math.ceil(total / limit) }, payments: enrichedPayments };
   }
 
+  async createArchiveCheckout({ userId, tenantId = null }) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, level: true, tenantId: true },
+    });
+    if (!user) throw new Error('User not found');
+
+    const allowedLevels = ['PRIVATE_USER', 'COMPANY_EMPLOYEE', 'COMPANY_ADMIN'];
+    if (!allowedLevels.includes(user.level)) {
+      throw new Error('Archive storage is available for private and company users only');
+    }
+
+    const finalPrice = ARCHIVE_ANNUAL_PRICE_EUR;
+    const effectiveTenantId = tenantId || user.tenantId || null;
+
+    let stripeCustomerId;
+    const existingCustomer = await prisma.payment.findFirst({
+      where: { userId, stripeCustomerId: { not: null } },
+      select: { stripeCustomerId: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    stripeCustomerId = existingCustomer?.stripeCustomerId;
+    if (!stripeCustomerId) {
+      const customer = await stripe.customers.create({ email: user.email, metadata: { userId } });
+      stripeCustomerId = customer.id;
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      customer: stripeCustomerId,
+      success_url: `${config.CLIENT_URL}/certificates/archive/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${config.CLIENT_URL}/certificates/archive/cancel`,
+      line_items: [{
+        price_data: {
+          currency: 'eur',
+          product_data: {
+            name: 'Certificate Archive Storage (1 year)',
+            description: 'Download your training certificates beyond the 30-day free window',
+            metadata: { userId, type: 'ARCHIVE_STORAGE' },
+          },
+          unit_amount: Math.round(finalPrice * 100),
+        },
+        quantity: 1,
+      }],
+      metadata: {
+        userId,
+        type: 'ARCHIVE_STORAGE',
+        tenantId: effectiveTenantId ?? '',
+      },
+    });
+
+    const payment = await prisma.payment.create({
+      data: {
+        userId,
+        type: 'ARCHIVE_STORAGE',
+        status: 'PENDING',
+        amount: finalPrice,
+        currency: 'EUR',
+        stripeSessionId: session.id,
+        stripeCustomerId,
+        tenantId: effectiveTenantId,
+      },
+    });
+
+    return { type: 'PAID', url: session.url, sessionId: session.id, amount: finalPrice, paymentId: payment.id };
+  }
+
+  async verifyArchivePayment(sessionId, userId) {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.payment_status !== 'paid') {
+      return { paid: false, message: 'Payment not completed yet' };
+    }
+
+    const updateResult = await prisma.payment.updateMany({
+      where: { stripeSessionId: sessionId, userId, status: 'PENDING' },
+      data: { status: 'SUCCESS', stripePaymentIntentId: session.payment_intent ?? '' },
+    });
+
+    const payment = await prisma.payment.findFirst({ where: { stripeSessionId: sessionId, userId } });
+    if (!payment) throw new Error('Payment record not found');
+
+    if (updateResult.count === 0) {
+      const sub = await prisma.archiveSubscription.findUnique({ where: { userId } });
+      return { paid: true, alreadyProcessed: true, archiveSubscription: sub };
+    }
+
+    const tenantId = session.metadata?.tenantId || payment.tenantId || null;
+    const subscription = await activateArchiveSubscription(userId, payment.id, tenantId || null);
+
+    log.info(`Archive subscription activated for user ${userId}`);
+    return { paid: true, archiveSubscription: subscription, payment };
+  }
+
   async handleWebhook(rawBody, signature) {
     let event;
     try {
@@ -1242,6 +1347,10 @@ class PaymentService {
             case 'LICENSE_PURCHASE':
             case 'LICENSE_RENEWAL':
               await this.verifyLicensePayment(session.id, userId);
+              break;
+
+            case 'ARCHIVE_STORAGE':
+              await this.verifyArchivePayment(session.id, userId);
               break;
 
             default:

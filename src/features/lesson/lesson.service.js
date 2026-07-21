@@ -1,10 +1,74 @@
 
 import { prisma } from '../../config/db.js';
-import { localizeObject } from '../../shared/services/translate/translate.service.js';
+import { localizeObject, t } from '../../shared/services/translate/translate.service.js';
+import {
+    assertCanAccessCourse,
+    assertCanManageCourse,
+} from '../course/course.permission.js';
 import { enrollmentService } from '../enrollment/enrollment.service.js';
 
 const LESSON_I18N_KEYS = ['title'];
+const SCORM_TYPES = ['SCORM', 'SCORM_12'];
+
 export class LessonService {
+
+    _isScorm(contentType) {
+        return SCORM_TYPES.includes(contentType);
+    }
+
+    _isLessonCompleted(lesson, progress) {
+        if (!progress) return false;
+        if (this._isScorm(lesson.contentType)) {
+            return ['COMPLETED', 'PASSED'].includes(progress.scormStatus);
+        }
+        return progress.completed === true;
+    }
+
+    /** SEQUENTIAL = previous required lessons must be done; FREE = all open; LOCKED_FINAL = same as FREE until final test */
+    _isLessonAccessible(lesson, sortedLessons, progressMap, navigationMode = 'SEQUENTIAL') {
+        if (lesson.isLocked) return false;
+        if (navigationMode === 'FREE' || navigationMode === 'LOCKED_FINAL') return true;
+
+        const idx = sortedLessons.findIndex(l => l.id === lesson.id);
+        if (idx <= 0) return true;
+
+        for (let i = 0; i < idx; i++) {
+            const prev = sortedLessons[i];
+            if (!prev.isRequired) continue;
+            const prevProgress = progressMap.get(prev.id);
+            if (!this._isLessonCompleted(prev, prevProgress)) return false;
+        }
+        return true;
+    }
+
+    _formatLessonProgressRow(lesson, progress, locale, { sortedLessons, progressMap, navigationMode }) {
+        const isScorm = this._isScorm(lesson.contentType);
+        const isCompleted = this._isLessonCompleted(lesson, progress);
+        const isAccessible = this._isLessonAccessible(lesson, sortedLessons, progressMap, navigationMode);
+
+        return {
+            lessonId: lesson.id,
+            title: t(lesson.title, locale),
+            orderIndex: lesson.orderIndex,
+            contentType: lesson.contentType,
+            isTracked: isScorm,
+            isRequired: lesson.isRequired,
+            isLocked: lesson.isLocked,
+            isAccessible,
+            isCompleted,
+            durationSecs: lesson.durationSecs ?? null,
+            contentUrl: lesson.contentUrl ?? null,
+            youtubeUrl: lesson.youtubeUrl ?? null,
+            scormPackageUrl: isScorm ? (lesson.scormPackageUrl ?? null) : null,
+            scormEntryPoint: isScorm ? (lesson.scormEntryPoint ?? null) : null,
+            timeSpentSecs: progress?.timeSpentSecs ?? 0,
+            startedAt: progress?.startedAt ?? null,
+            completedAt: progress?.completedAt ?? null,
+            scormStatus: isScorm ? (progress?.scormStatus ?? 'NOT_ATTEMPTED') : null,
+            scormScore: isScorm ? (progress?.scormScore ?? null) : null,
+            scormPassed: isScorm ? (progress?.scormPassed ?? false) : null,
+        };
+    }
 
     async getLessonsByCourse(courseId, locale = 'it', queryParams = {}, user = null) {
         const page = parseInt(queryParams.page) || 1;
@@ -13,11 +77,19 @@ export class LessonService {
 
         const course = await prisma.course.findUnique({
             where: { id: courseId },
-            select: { id: true, courseTitle: true, tenantId: true, isActive: true },
+            select: {
+                id: true,
+                courseTitle: true,
+                slug: true,
+                tenantId: true,
+                createdById: true,
+                isActive: true,
+                navigationMode: true,
+            },
         });
         if (!course) throw new Error('Course not found');
 
-        if (user) await this._checkCoursePermission(course, user);
+        if (user) await assertCanAccessCourse(course, user, prisma);
 
         const where = { courseId };
 
@@ -52,11 +124,19 @@ export class LessonService {
         ]);
 
         return {
-            meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+            meta: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+                courseId,
+                courseTitle: t(course.courseTitle, locale),
+                navigationMode: course.navigationMode,
+            },
             lessons: lessons.map(lesson => ({
                 ...localizeObject(lesson, locale, LESSON_I18N_KEYS),
                 viewCount: lesson._count.progress,
-                isTracked: ['SCORM', 'SCORM_12'].includes(lesson.contentType),
+                isTracked: this._isScorm(lesson.contentType),
             })),
         };
     }
@@ -65,7 +145,7 @@ export class LessonService {
         const lesson = await prisma.lesson.findUnique({
             where: { id },
             include: {
-                course: { select: { tenantId: true, isActive: true } },
+                course: { select: { id: true, tenantId: true, createdById: true, isActive: true } },
                 _count: { select: { progress: true } },
                 ...(includeProgress && userId && {
                     progress: {
@@ -85,7 +165,7 @@ export class LessonService {
         });
 
         if (!lesson) return null;
-        if (user) await this._checkCoursePermission(lesson.course, user);
+        if (user) await assertCanAccessCourse(lesson.course, user, prisma);
 
         return {
             ...localizeObject(lesson, locale, LESSON_I18N_KEYS),
@@ -102,7 +182,7 @@ export class LessonService {
             select: { id: true, slug: true, tenantId: true, createdById: true, isActive: true },
         });
         if (!course) throw new Error('Course not found');
-        if (user) await this._checkCoursePermission(course, user);
+        if (user) assertCanManageCourse(course, user, 'add lessons to');
 
         if (['SCORM', 'SCORM_12'].includes(data.contentType)) {
             if (!data.scormPackageUrl) throw new Error('scormPackageUrl is required for SCORM lessons');
@@ -157,11 +237,11 @@ export class LessonService {
                 id: true,
                 courseId: true,
                 contentType: true,
-                course: { select: { tenantId: true, createdById: true } },
+                course: { select: { id: true, tenantId: true, createdById: true, isActive: true } },
             },
         });
         if (!lesson) throw new Error('Lesson not found');
-        if (user) await this._checkCoursePermission(lesson.course, user);
+        if (user) assertCanManageCourse(lesson.course, user, 'update lessons in');
         const newType = data.contentType ?? lesson.contentType;
         if (['SCORM', 'SCORM_12'].includes(newType)) {
             if (data.scormPackageUrl === null || data.scormPackageUrl === '') {
@@ -201,12 +281,12 @@ export class LessonService {
             where: { id },
             select: {
                 id: true,
-                course: { select: { tenantId: true, createdById: true } },
+                course: { select: { id: true, tenantId: true, createdById: true, isActive: true } },
                 _count: { select: { progress: true, scormSessions: true } },
             },
         });
         if (!lesson) throw new Error('Lesson not found');
-        if (user) await this._checkCoursePermission(lesson.course, user);
+        if (user) assertCanManageCourse(lesson.course, user, 'delete lessons from');
 
         if (lesson._count.progress > 0 || lesson._count.scormSessions > 0) {
             throw new Error(
@@ -236,7 +316,7 @@ export class LessonService {
 
 
             if (user) {
-                await this._checkCoursePermission(course, user);
+                assertCanManageCourse(course, user, 'reorder lessons in');
             }
 
 
@@ -299,18 +379,31 @@ export class LessonService {
                 courseId: true,
                 contentType: true,
                 isRequired: true,
-                course: { select: { id: true, tenantId: true, isActive: true } }, // ✅ add id + isActive
+                isLocked: true,
+                orderIndex: true,
+                course: {
+                    select: {
+                        id: true,
+                        tenantId: true,
+                        createdById: true,
+                        isActive: true,
+                        navigationMode: true,
+                    },
+                },
             },
         });
         if (!lesson) throw new Error('Lesson not found');
-        if (user) await this._checkCoursePermission(lesson.course, user);
+        if (user) await assertCanAccessCourse(lesson.course, user, prisma);
 
-        const isScorm = ['SCORM', 'SCORM_12'].includes(lesson.contentType);
-        if (isScorm) {
+        if (this._isScorm(lesson.contentType)) {
             throw new Error(
                 'SCORM lesson progress is managed automatically by the SCORM player. ' +
                 'Use the /scorm/launch → /scorm/finish flow instead.'
             );
+        }
+
+        if (lesson.isLocked) {
+            throw new Error('This lesson is locked');
         }
 
         const enrollment = await prisma.enrollment.findUnique({
@@ -324,6 +417,24 @@ export class LessonService {
         }
         if (enrollment.status === 'COMPLETED') throw new Error('Course already completed');
         if (enrollment.expiresAt < new Date()) throw new Error('Course access has expired');
+
+        const [allLessons, allProgress] = await Promise.all([
+            prisma.lesson.findMany({
+                where: { courseId: lesson.courseId },
+                orderBy: { orderIndex: 'asc' },
+                select: { id: true, contentType: true, isRequired: true, isLocked: true, orderIndex: true },
+            }),
+            prisma.lessonProgress.findMany({
+                where: { enrollmentId: enrollment.id },
+                select: { lessonId: true, completed: true, scormStatus: true },
+            }),
+        ]);
+        const progressMap = new Map(allProgress.map(p => [p.lessonId, p]));
+
+        if (!this._isLessonAccessible(lesson, allLessons, progressMap, lesson.course.navigationMode)) {
+            throw new Error('Complete previous required lessons before accessing this one');
+        }
+
         const isCompleted = progressData.completed ?? false;
         const timeSpentSecs = progressData.timeSpentSecs ?? 0;
 
@@ -346,64 +457,36 @@ export class LessonService {
             },
         });
 
-        if (isCompleted) {
-            await this.checkCourseCompletion(lesson.courseId, enrollment.id);
-        }
+        await enrollmentService.checkAndUpdateEnrollmentStatus(enrollment.id);
 
         return progress;
     }
 
-
-    async checkCourseCompletion(courseId, enrollmentId) {
-        const enrollment = await prisma.enrollment.findUnique({
-            where: { id: enrollmentId },
-            select: { status: true },
-        });
-        if (!enrollment || enrollment.status === 'COMPLETED') return;
-
-        const requiredLessons = await prisma.lesson.findMany({
-            where: { courseId, isRequired: true },
-            select: { id: true, contentType: true },
-        });
-        if (requiredLessons.length === 0) return;
-
-        const progressRecords = await prisma.lessonProgress.findMany({
-            where: {
-                enrollmentId,
-                lessonId: { in: requiredLessons.map(l => l.id) },
-            },
-            select: { lessonId: true, completed: true, scormStatus: true },
-        });
-
-        const progressMap = new Map(progressRecords.map(p => [p.lessonId, p]));
-
-        const allDone = requiredLessons.every(lesson => {
-            const p = progressMap.get(lesson.id);
-            if (!p) return false;
-            if (['SCORM', 'SCORM_12'].includes(lesson.contentType)) {
-                return ['COMPLETED', 'PASSED'].includes(p.scormStatus);
-            }
-            return p.completed === true;
-        });
-
-        if (allDone) {
-            await enrollmentService.checkAndUpdateEnrollmentStatus(enrollmentId);
-        }
+    async checkCourseCompletion(_courseId, enrollmentId) {
+        await enrollmentService.checkAndUpdateEnrollmentStatus(enrollmentId);
     }
 
-    async getUserProgress(courseId, userId, user = null) {
+    async getUserProgress(courseId, userId, user = null, locale = 'it') {
         const course = await prisma.course.findUnique({
             where: { id: courseId },
-            select: { id: true, tenantId: true, isActive: true },
+            select: {
+                id: true,
+                courseTitle: true,
+                slug: true,
+                tenantId: true,
+                createdById: true,
+                isActive: true,
+                navigationMode: true,
+            },
         });
         if (!course) throw new Error('Course not found');
-        if (user) await this._checkCoursePermission(course, user);
+        if (user) await assertCanAccessCourse(course, user, prisma);
 
         const enrollment = await prisma.enrollment.findUnique({
             where: { userId_courseId: { userId, courseId } },
-            select: { id: true },
+            select: { id: true, status: true, startedAt: true, completedAt: true, expiresAt: true },
         });
-        if (!enrollment) throw new Error('User is not enrolled in this course');
+        if (!enrollment) throw new Error('You are not enrolled in this course');
 
         const lessons = await prisma.lesson.findMany({
             where: { courseId },
@@ -424,30 +507,47 @@ export class LessonService {
             },
         });
 
-        return lessons.map(lesson => {
-            const p = lesson.progress[0] || null;
-            const isScorm = ['SCORM', 'SCORM_12'].includes(lesson.contentType);
-            const isCompleted = isScorm
-                ? ['COMPLETED', 'PASSED'].includes(p?.scormStatus)
-                : (p?.completed ?? false);
+        const progressMap = new Map(
+            lessons.map(l => [l.id, l.progress[0] || null])
+        );
 
-            return {
-                lessonId: lesson.id,
-                title: lesson.title,
-                orderIndex: lesson.orderIndex,
-                contentType: lesson.contentType,
-                isTracked: isScorm,
-                isRequired: lesson.isRequired,
-                isLocked: lesson.isLocked,
-                isCompleted,
-                timeSpentSecs: p?.timeSpentSecs ?? 0,
-                startedAt: p?.startedAt ?? null,
-                completedAt: p?.completedAt ?? null,
-                scormStatus: isScorm ? (p?.scormStatus ?? 'NOT_ATTEMPTED') : null,
-                scormScore: isScorm ? (p?.scormScore ?? null) : null,
-                scormPassed: isScorm ? (p?.scormPassed ?? false) : null,
-            };
-        });
+        const rows = lessons.map(lesson =>
+            this._formatLessonProgressRow(lesson, progressMap.get(lesson.id), locale, {
+                sortedLessons: lessons,
+                progressMap,
+                navigationMode: course.navigationMode,
+            })
+        );
+
+        const totalLessons = rows.length;
+        const completedLessons = rows.filter(r => r.isCompleted).length;
+        const requiredLessons = rows.filter(r => r.isRequired);
+        const completedRequired = requiredLessons.filter(r => r.isCompleted).length;
+
+        return {
+            enrollment: {
+                id: enrollment.id,
+                status: enrollment.status,
+                startedAt: enrollment.startedAt,
+                completedAt: enrollment.completedAt,
+                expiresAt: enrollment.expiresAt,
+            },
+            course: {
+                id: course.id,
+                title: t(course.courseTitle, locale),
+                slug: course.slug,
+                navigationMode: course.navigationMode,
+            },
+            summary: {
+                totalLessons,
+                completedLessons,
+                requiredLessons: requiredLessons.length,
+                completedRequiredLessons: completedRequired,
+                percentage: totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0,
+                totalTimeSpentSecs: rows.reduce((s, r) => s + r.timeSpentSecs, 0),
+            },
+            lessons: rows,
+        };
     }
 
 
@@ -484,20 +584,18 @@ export class LessonService {
 
         return enrollments.map(enrollment => ({
             courseId: enrollment.courseId,
-            courseTitle: localizeObject(enrollment.course.courseTitle, locale),
+            courseTitle: t(enrollment.course.courseTitle, locale),
             courseSlug: enrollment.course.slug,
             enrollmentStatus: enrollment.status,
             startedAt: enrollment.startedAt,
             completedAt: enrollment.completedAt,
             lessons: enrollment.lessonProgress.map(p => {
-                const isScorm = ['SCORM', 'SCORM_12'].includes(p.lesson.contentType);
-                const isCompleted = isScorm
-                    ? ['COMPLETED', 'PASSED'].includes(p.scormStatus)
-                    : p.completed;
+                const isScorm = this._isScorm(p.lesson.contentType);
+                const isCompleted = this._isLessonCompleted(p.lesson, p);
 
                 return {
                     lessonId: p.lessonId,
-                    lessonTitle: localizeObject(p.lesson.title, locale),
+                    lessonTitle: t(p.lesson.title, locale),
                     contentType: p.lesson.contentType,
                     isTracked: isScorm,
                     isRequired: p.lesson.isRequired,
@@ -521,8 +619,9 @@ export class LessonService {
                         id: true,
                         courseTitle: true,
                         tenantId: true,
+                        createdById: true,
                         isActive: true,
-                        slug: true
+                        slug: true,
                     },
                 },
                 _count: {
@@ -546,7 +645,7 @@ export class LessonService {
         });
 
         if (!lesson) return null;
-        if (user) await this._checkCoursePermission(lesson.course, user);
+        if (user) await assertCanAccessCourse(lesson.course, user, prisma);
 
         const isScorm = ['SCORM', 'SCORM_12'].includes(lesson.contentType);
 
@@ -575,7 +674,7 @@ export class LessonService {
 
 
 
-    async getLessonStats(lessonId, user = null) {
+    async getLessonStats(lessonId, user = null, locale = 'it') {
         const lesson = await prisma.lesson.findUnique({
             where: { id: lessonId },
             select: {
@@ -583,13 +682,14 @@ export class LessonService {
                 title: true,
                 courseId: true,
                 contentType: true,
-                course: { select: { tenantId: true, createdById: true, isActive: true } },
+                course: { select: { id: true, tenantId: true, createdById: true, isActive: true } },
             },
         });
         if (!lesson) throw new Error('Lesson not found');
-        if (user) await this._checkCoursePermission(lesson.course, user);
+        if (user) assertCanManageCourse(lesson.course, user, 'view statistics for');
 
-        const isScorm = ['SCORM', 'SCORM_12'].includes(lesson.contentType);
+        const isScorm = this._isScorm(lesson.contentType);
+        const lessonTitle = t(lesson.title, locale);
 
         if (isScorm) {
             const [totalViewers, completedCount, timeStats, scormStats] = await Promise.all([
@@ -617,7 +717,7 @@ export class LessonService {
 
             return {
                 lessonId,
-                lessonTitle: lesson.title,
+                lessonTitle,
                 contentType: lesson.contentType,
                 isScorm: true,
                 totalViewers,
@@ -637,7 +737,7 @@ export class LessonService {
 
         return {
             lessonId,
-            lessonTitle: lesson.title,
+            lessonTitle,
             contentType: lesson.contentType,
             isScorm: false,
             totalViewers,
@@ -645,7 +745,7 @@ export class LessonService {
         };
     }
 
-    async getLessonStatus(lessonId, userId) {
+    async getLessonStatus(lessonId, userId, locale = 'it') {
         const lesson = await prisma.lesson.findUnique({
             where: { id: lessonId },
             select: {
@@ -654,14 +754,24 @@ export class LessonService {
                 contentType: true,
                 isRequired: true,
                 isLocked: true,
+                orderIndex: true,
                 courseId: true,
-                course: { select: { tenantId: true, isActive: true } },
+                course: {
+                    select: {
+                        id: true,
+                        navigationMode: true,
+                        tenantId: true,
+                        createdById: true,
+                        isActive: true,
+                    },
+                },
             },
         });
         if (!lesson) throw new Error('Lesson not found');
         if (!lesson.course.isActive) throw new Error('Course is not active');
 
-        const isScorm = ['SCORM', 'SCORM_12'].includes(lesson.contentType);
+        const isScorm = this._isScorm(lesson.contentType);
+        const lessonTitle = t(lesson.title, locale);
 
         const enrollment = await prisma.enrollment.findUnique({
             where: { userId_courseId: { userId, courseId: lesson.courseId } },
@@ -671,9 +781,10 @@ export class LessonService {
         if (!enrollment) {
             return {
                 lessonId: lesson.id,
-                lessonTitle: lesson.title,
+                lessonTitle,
                 isEnrolled: false,
                 isLocked: lesson.isLocked,
+                isAccessible: false,
                 isRequired: lesson.isRequired,
                 contentType: lesson.contentType,
                 isTracked: isScorm,
@@ -681,14 +792,16 @@ export class LessonService {
             };
         }
 
-        const progress = await prisma.lessonProgress.findUnique({
-            where: {
-                enrollmentId_lessonId: {
-                    enrollmentId: enrollment.id,
-                    lessonId: lesson.id,
-                },
-            },
+        const allLessons = await prisma.lesson.findMany({
+            where: { courseId: lesson.courseId },
+            orderBy: { orderIndex: 'asc' },
+            select: { id: true, contentType: true, isRequired: true, isLocked: true, orderIndex: true },
+        });
+
+        const allProgress = await prisma.lessonProgress.findMany({
+            where: { enrollmentId: enrollment.id },
             select: {
+                lessonId: true,
                 completed: true,
                 completedAt: true,
                 startedAt: true,
@@ -698,18 +811,26 @@ export class LessonService {
                 timeSpentSecs: true,
             },
         });
+        const progressMap = new Map(allProgress.map(p => [p.lessonId, p]));
+        const progress = progressMap.get(lesson.id) || null;
 
-        const isCompleted = isScorm
-            ? ['COMPLETED', 'PASSED'].includes(progress?.scormStatus)
-            : (progress?.completed ?? false);
+        const isCompleted = this._isLessonCompleted(lesson, progress);
+        const isAccessible = this._isLessonAccessible(
+            lesson,
+            allLessons,
+            progressMap,
+            lesson.course.navigationMode
+        );
 
         return {
             lessonId: lesson.id,
-            lessonTitle: lesson.title,
+            lessonTitle,
             isEnrolled: true,
             enrollmentStatus: enrollment.status,
             expiresAt: enrollment.expiresAt,
+            navigationMode: lesson.course.navigationMode,
             isLocked: lesson.isLocked,
+            isAccessible,
             isRequired: lesson.isRequired,
             contentType: lesson.contentType,
             isTracked: isScorm,
@@ -721,41 +842,6 @@ export class LessonService {
             scormScore: isScorm ? (progress?.scormScore ?? null) : null,
             scormPassed: isScorm ? (progress?.scormPassed ?? false) : null,
         };
-    }
-
-
-    async _checkCoursePermission(course, user) {
-        if (!user) return;
-
-        const { level: userLevel, id: userId } = user;
-
-        if (userLevel === 'PLATFORM_ADMIN') return;
-
-        if (userLevel === 'LICENSE_USER') {
-            const dbUser = await prisma.user.findUnique({
-                where: { id: userId },
-                select: { tenantId: true },
-            });
-            if (course.tenantId !== dbUser?.tenantId) {
-                throw new Error('Permission denied: This course belongs to a different tenant');
-            }
-            return;
-        }
-
-        if (userLevel === 'TEACHER') {
-            const teacherCourse = await prisma.course.findFirst({
-                where: {
-                    id: course.id,
-                    OR: [{ createdById: userId }, { teacherId: userId }],
-                },
-                select: { id: true },
-            });
-            if (!teacherCourse) {
-                throw new Error('Permission denied: You are not the teacher of this course');
-            }
-            return;
-        }
-        if (!course.isActive) throw new Error('This course is not active');
     }
 }
 

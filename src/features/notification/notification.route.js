@@ -6,6 +6,10 @@ const router = express.Router();
 
 router.use(authMiddleware.protect);
 
+router.get('/deadlines', notificationController.getMyDeadlines);
+router.get('/alerts', notificationController.getMyAlerts);
+router.patch('/alerts/:alertId/dismiss', notificationController.dismissAlert);
+
 router.get('/', notificationController.getMyNotifications);
 
 router.get('/unread-count', notificationController.getUnreadCount);

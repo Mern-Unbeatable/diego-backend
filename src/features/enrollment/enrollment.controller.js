@@ -47,7 +47,7 @@ class EnrollmentController {
 
     getMyEnrollments = catchAsync(async (req, res) => {
         const query = enrollmentQuerySchema.parse(req.query);
-        const result = await enrollmentService.getEnrollments(query, req.user.id, req.user);
+        const result = await enrollmentService.getEnrollments(query, req.user.id, req.user, req.locale);
 
         ResponseHandler.success(res, {
             message: 'My enrollments fetched',
@@ -57,7 +57,7 @@ class EnrollmentController {
 
     getAllEnrollments = catchAsync(async (req, res) => {
         const query = enrollmentQuerySchema.parse(req.query);
-        const result = await enrollmentService.getEnrollments(query, null, req.user);
+        const result = await enrollmentService.getEnrollments(query, null, req.user, req.locale);
 
         ResponseHandler.success(res, {
             message: 'Enrollments fetched',
@@ -143,7 +143,7 @@ class EnrollmentController {
     });
     getLicenseeOverview = catchAsync(async (req, res) => {
         const query = enrollmentQuerySchema.parse(req.query);
-        const result = await enrollmentService.getLicenseeOverview(query, req.user);
+        const result = await enrollmentService.getLicenseeOverview(query, req.user, req.locale);
 
         ResponseHandler.success(res, {
             message: 'License dashboard fetched successfully',
@@ -156,7 +156,8 @@ class EnrollmentController {
 
         const result = await enrollmentService.getLicenseeAllEnrollments(
             query,
-            req.user
+            req.user,
+            req.locale
         );
 
         ResponseHandler.success(res, {
@@ -167,7 +168,7 @@ class EnrollmentController {
 
     getLicenseeStudents = catchAsync(async (req, res) => {
         const query = enrollmentQuerySchema.parse(req.query);
-        const result = await enrollmentService.getLicenseeStudents(query, req.user);
+        const result = await enrollmentService.getLicenseeStudents(query, req.user, req.locale);
 
         ResponseHandler.success(res, {
             message: 'Licensee students fetched successfully',
@@ -177,7 +178,7 @@ class EnrollmentController {
 
     getLicenseeStudentDetail = catchAsync(async (req, res) => {
         const { studentId } = req.params;
-        const result = await enrollmentService.getLicenseeStudentDetail(studentId, req.user);
+        const result = await enrollmentService.getLicenseeStudentDetail(studentId, req.user, req.locale);
 
         ResponseHandler.success(res, {
             message: 'Student detail fetched successfully',
