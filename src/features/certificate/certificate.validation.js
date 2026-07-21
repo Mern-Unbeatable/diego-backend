@@ -33,6 +33,7 @@ export const generateCertificateSchema = z.object({
     issueDate: z.coerce.date().optional(),
     expiryDate: z.coerce.date().optional(),
     forceComplete: booleanFromFormData.default(false).optional(),
+    forceRegenerate: booleanFromFormData.default(false).optional(),
     certificateTemplateConfig: z.preprocess((val) => {
         if (typeof val === 'string') {
             try { return JSON.parse(val); } catch { return val; }

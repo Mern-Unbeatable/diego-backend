@@ -1,41 +1,56 @@
 
+import { randomUUID } from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { prisma } from '../../config/db.js';
 import { localizeObject } from '../../shared/services/translate/translate.service.js';
 import { Logger } from '../../config/logger.js';
 import { config } from '../../config/config.js';
 import { addYears } from 'date-fns';
 import { notificationService } from '../notification/notification.service.js';
-
+import {
+    generateCertificatePdf,
+    deleteCertificatePdf,
+} from './certificate-pdf.generator.js';
 
 const log = new Logger('CertificateService');
 
-export class CertificateService {
+const PDF_DIR = path.join(process.cwd(), 'uploads', 'certificates', 'pdfs');
 
+const ENROLLMENT_INCLUDE = {
+    user: {
+        select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            tenantId: true,
+            preferredLanguage: true,
+            companyId: true,
+            company: { select: { id: true, name: true, logoUrl: true } },
+        },
+    },
+    course: {
+        select: {
+            id: true,
+            courseTitle: true,
+            tenantId: true,
+            passScorePercent: true,
+            certificateTemplateUrl: true,
+            certificateTemplateConfig: true,
+            tenant: { select: { id: true, name: true, logoUrl: true } },
+        },
+    },
+    companyContext: { select: { id: true, name: true, logoUrl: true } },
+};
+
+export class CertificateService {
 
     async autoGenerateOnCompletion(enrollmentId) {
         try {
             const enrollment = await prisma.enrollment.findUnique({
                 where: { id: enrollmentId },
-                include: {
-                    user: {
-                        select: {
-                            id: true,
-                            firstName: true,
-                            lastName: true,
-                            email: true,
-                            tenantId: true,
-                            preferredLanguage: true,
-                        },
-                    },
-                    course: {
-                        select: {
-                            id: true,
-                            courseTitle: true,
-                            tenantId: true,
-                            passScorePercent: true,
-                        },
-                    },
-                },
+                include: ENROLLMENT_INCLUDE,
             });
 
             if (!enrollment) {
@@ -48,71 +63,24 @@ export class CertificateService {
                 return null;
             }
 
-            // Avoid duplicate certificates
             const existing = await prisma.certificate.findUnique({
                 where: { enrollmentId },
                 select: { id: true, status: true, pdfUrl: true },
             });
 
-            if (existing?.status === 'ISSUED') {
+            if (existing?.status === 'ISSUED' && this._pdfFileExists(existing.id)) {
                 log.info(`Certificate already ISSUED for enrollment ${enrollmentId}`);
                 return existing;
             }
 
-            const now = new Date();
-            const downloadableUntil = addYears(now, 1);
-
-            const pdfUrl = await this._generatePdf(enrollment, null);
-            const qrCode = await this._generateQrCode(enrollment);
-            const timestampProof = `0x${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`;
-
-            const certificateData = {
-                enrollmentId,
-                userId: enrollment.user.id,
-                courseId: enrollment.course.id,
-                pdfUrl,
-                qrCode,
-                timestampProof,
-                status: 'ISSUED',
-                issuedAt: now,
-                downloadableUntil,
-                tenantId: enrollment.user.tenantId || enrollment.course.tenantId || null,
-            };
-
-            let certificate;
-            if (existing) {
-                certificate = await prisma.certificate.update({
-                    where: { id: existing.id },
-                    data: certificateData,
-                });
-            } else {
-                certificate = await prisma.certificate.create({
-                    data: certificateData,
-                });
-            }
-
-            log.info(`Certificate auto-generated: ${certificate.id} for user ${enrollment.user.id}`);
-
-
-
-            try {
-                const courseTitle = this._resolveTitle(
-                    enrollment.course.courseTitle,
-                    enrollment.user.preferredLanguage
-                );
-                await notificationService.notifyCertificateReady({
-                    userId: enrollment.user.id,
-                    courseTitle,
-                    tenantId: certificate.tenantId,
-                    pdfUrl: certificate.pdfUrl,
-                });
-            } catch (err) {
-                log.error(`Could not send certificate notification: ${err.message}`);
-            }
-
-            return certificate;
+            return this._issueCertificate({
+                enrollment,
+                existingCertificateId: existing?.id || null,
+                companyLogoUrl: null,
+                issueDate: new Date(),
+                expiryDate: addYears(new Date(), 1),
+            });
         } catch (error) {
-
             log.error(`autoGenerateOnCompletion failed for enrollment ${enrollmentId}: ${error.message}`);
             return null;
         }
@@ -179,6 +147,7 @@ export class CertificateService {
             certificates: certificates.map(cert => this._formatCertificate(cert, locale)),
         };
     }
+
     async getMyCertificates(userId, queryParams = {}, locale = 'it') {
         const page = parseInt(queryParams.page) || 1;
         const limit = Math.min(parseInt(queryParams.limit) || 20, 50);
@@ -295,28 +264,13 @@ export class CertificateService {
             createdAt: certificate.createdAt,
         };
     }
-    // generateCertificate  
 
     async generateCertificate(data, userId) {
-        const { enrollmentId, companyLogoUrl, issueDate, expiryDate, forceComplete } = data;
+        const { enrollmentId, companyLogoUrl, issueDate, expiryDate, forceComplete, forceRegenerate } = data;
 
-        const enrollment = await prisma.enrollment.findUnique({
+        let enrollment = await prisma.enrollment.findUnique({
             where: { id: enrollmentId },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        firstName: true,
-                        lastName: true,
-                        email: true,
-                        tenantId: true,
-                        preferredLanguage: true,
-                    },
-                },
-                course: {
-                    select: { id: true, courseTitle: true, tenantId: true },
-                },
-            },
+            include: ENROLLMENT_INCLUDE,
         });
 
         if (!enrollment) throw new Error('Enrollment not found');
@@ -329,8 +283,6 @@ export class CertificateService {
 
         await this._checkGeneratePermission(enrollment, userId, requestingUser);
 
-        // ── Completion check ──
-        // COMPANY_ADMIN 
         const isAdmin = ['PLATFORM_ADMIN', 'LICENSE_USER'].includes(requestingUser.level);
         const isCompanyAdmin = requestingUser.level === 'COMPANY_ADMIN';
         const canForce = (isAdmin || isCompanyAdmin) && forceComplete === true;
@@ -343,86 +295,40 @@ export class CertificateService {
                 );
             }
 
-            // Force complete
-            await prisma.enrollment.update({
+            enrollment = await prisma.enrollment.update({
                 where: { id: enrollmentId },
                 data: { status: 'COMPLETED', completedAt: new Date() },
+                include: ENROLLMENT_INCLUDE,
             });
             log.info(`Enrollment ${enrollmentId} force-completed by user ${userId}`);
         }
 
-        // Duplicate check
         const existing = await prisma.certificate.findUnique({
             where: { enrollmentId },
             select: { id: true, status: true },
         });
+
         if (existing?.status === 'ISSUED') {
-            throw new Error('Certificate already issued for this enrollment');
+            const pdfExists = this._pdfFileExists(existing.id);
+            if (!forceRegenerate && pdfExists) {
+                throw new Error('Certificate already issued for this enrollment. Pass forceRegenerate: true to regenerate the PDF.');
+            }
         }
 
         const now = new Date();
-        const downloadableUntil = expiryDate ? new Date(expiryDate) : addYears(now, 1);
-        const pdfUrl = await this._generatePdf(enrollment, companyLogoUrl);
-        const qrCode = await this._generateQrCode(enrollment);
-        const timestampProof = `0x${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`;
-
-        const certificateData = {
-            enrollmentId,
-            userId: enrollment.user.id,
-            courseId: enrollment.course.id,
-            pdfUrl,
-            qrCode,
-            timestampProof,
+        const certificate = await this._issueCertificate({
+            enrollment,
+            existingCertificateId: existing?.id || null,
             companyLogoUrl: companyLogoUrl || null,
-            status: 'ISSUED',
-            issuedAt: issueDate ? new Date(issueDate) : now,
-            downloadableUntil,
-            tenantId: enrollment.user.tenantId || enrollment.course.tenantId || null,
-        };
-
-        let certificate;
-        if (existing) {
-            certificate = await prisma.certificate.update({
-                where: { id: existing.id },
-                data: certificateData,
-                include: {
-                    user: { select: { id: true, email: true, firstName: true, lastName: true } },
-                    course: { select: { id: true, courseTitle: true, slug: true } },
-                    enrollment: { select: { status: true, completedAt: true } },
-                },
-            });
-        } else {
-            certificate = await prisma.certificate.create({
-                data: certificateData,
-                include: {
-                    user: { select: { id: true, email: true, firstName: true, lastName: true } },
-                    course: { select: { id: true, courseTitle: true, slug: true } },
-                    enrollment: { select: { status: true, completedAt: true } },
-                },
-            });
-        }
+            issueDate: issueDate ? new Date(issueDate) : now,
+            expiryDate: expiryDate ? new Date(expiryDate) : addYears(now, 1),
+            includeRelations: true,
+        });
 
         log.info(`Certificate generated: ${certificate.id} by user ${userId}`);
-
-        // Notify
-        try {
-
-            const courseTitle = this._resolveTitle(
-                enrollment.course.courseTitle,
-                enrollment.user.preferredLanguage
-            );
-            notificationService.notifyCertificateReady({
-                userId: enrollment.user.id,
-                courseTitle,
-                tenantId: certificate.tenantId,
-                pdfUrl: certificate.pdfUrl,
-            }).catch(err => log.error(`Certificate notification failed: ${err.message}`));
-        } catch (err) {
-            log.error(`Could not send certificate notification: ${err.message}`);
-        }
-
         return certificate;
     }
+
     async updateCertificate(id, data, userId) {
         const existing = await prisma.certificate.findUnique({
             where: { id },
@@ -443,7 +349,6 @@ export class CertificateService {
         if (data.companyLogoUrl !== undefined) updateData.companyLogoUrl = data.companyLogoUrl;
         if (data.downloadableUntil !== undefined) updateData.downloadableUntil = new Date(data.downloadableUntil);
 
-
         if (data.editUnlockedOnce === true && !existing.editUnlockedOnce) {
             updateData.editUnlockedOnce = true;
         }
@@ -463,12 +368,14 @@ export class CertificateService {
             },
         });
     }
+
     async downloadCertificate(id, userId) {
-        const certificate = await prisma.certificate.findUnique({
+        let certificate = await prisma.certificate.findUnique({
             where: { id },
             select: {
                 id: true,
                 userId: true,
+                enrollmentId: true,
                 pdfUrl: true,
                 downloadCount: true,
                 status: true,
@@ -487,6 +394,24 @@ export class CertificateService {
             throw new Error('Certificate download link has expired. Please purchase archive storage to access it.');
         }
 
+        if (!this._pdfFileExists(certificate.id)) {
+            log.warn(`PDF missing for certificate ${id}, regenerating...`);
+            const enrollment = await prisma.enrollment.findUnique({
+                where: { id: certificate.enrollmentId },
+                include: ENROLLMENT_INCLUDE,
+            });
+            if (!enrollment) throw new Error('Enrollment not found for certificate regeneration');
+
+            const regenerated = await this._issueCertificate({
+                enrollment,
+                existingCertificateId: certificate.id,
+                companyLogoUrl: null,
+                issueDate: new Date(),
+                expiryDate: certificate.downloadableUntil,
+            });
+            certificate = { ...certificate, pdfUrl: regenerated.pdfUrl };
+        }
+
         await prisma.certificate.update({
             where: { id },
             data: {
@@ -500,6 +425,7 @@ export class CertificateService {
             downloadCount: certificate.downloadCount + 1,
         };
     }
+
     async verifyCertificate(certificateId) {
         const certificate = await prisma.certificate.findUnique({
             where: { id: certificateId },
@@ -512,6 +438,9 @@ export class CertificateService {
                 },
                 enrollment: {
                     select: { completedAt: true },
+                },
+                tenant: {
+                    select: { id: true, name: true },
                 },
             },
         });
@@ -534,6 +463,7 @@ export class CertificateService {
                     email: certificate.user.email,
                 },
                 course: certificate.course.courseTitle,
+                organization: certificate.tenant?.name || null,
                 issuedAt: certificate.issuedAt,
                 completedAt: certificate.enrollment?.completedAt ?? null,
                 qrCode: certificate.qrCode,
@@ -541,6 +471,7 @@ export class CertificateService {
             },
         };
     }
+
     async deleteCertificate(id, userId) {
         const existing = await prisma.certificate.findUnique({
             where: { id },
@@ -556,10 +487,110 @@ export class CertificateService {
             throw new Error('Permission denied: Only Platform Admin can delete certificates');
         }
 
+        await deleteCertificatePdf(id);
+
         return prisma.certificate.delete({
             where: { id },
             select: { id: true, userId: true, courseId: true },
         });
+    }
+
+    async _issueCertificate({
+        enrollment,
+        existingCertificateId = null,
+        companyLogoUrl = null,
+        issueDate,
+        expiryDate,
+        includeRelations = false,
+    }) {
+        const certificateId = existingCertificateId || randomUUID();
+        const locale = enrollment.user.preferredLanguage || 'it';
+
+        if (existingCertificateId) {
+            await deleteCertificatePdf(existingCertificateId);
+        }
+
+        const studentName = this._resolveStudentName(enrollment.user);
+        const courseTitle = this._resolveTitle(enrollment.course.courseTitle, locale);
+        const organizationName = this._resolveOrganizationName(enrollment);
+        const logoUrl = companyLogoUrl
+            || enrollment.companyContext?.logoUrl
+            || enrollment.user.company?.logoUrl
+            || enrollment.course.tenant?.logoUrl
+            || null;
+
+        const qrCode = this._generateQrCode(certificateId);
+        const verifyUrl = `${config.CLIENT_URL || 'http://localhost:5173'}/verify/${certificateId}`;
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(verifyUrl)}`;
+
+        const { pdfUrl } = await generateCertificatePdf({
+            certificateId,
+            studentName,
+            courseTitle,
+            organizationName,
+            issueDate,
+            completedAt: enrollment.completedAt,
+            certificateTemplateUrl: enrollment.course.certificateTemplateUrl,
+            certificateTemplateConfig: enrollment.course.certificateTemplateConfig,
+            companyLogoUrl: logoUrl,
+            qrCodeUrl,
+        });
+
+        const timestampProof = `0x${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`;
+        const tenantId = enrollment.user.tenantId || enrollment.course.tenantId || null;
+
+        const certificateData = {
+            enrollmentId: enrollment.id,
+            userId: enrollment.user.id,
+            courseId: enrollment.course.id,
+            pdfUrl,
+            qrCode,
+            timestampProof,
+            companyLogoUrl: logoUrl,
+            status: 'ISSUED',
+            issuedAt: issueDate,
+            downloadableUntil: expiryDate,
+            tenantId,
+        };
+
+        const include = includeRelations
+            ? {
+                user: { select: { id: true, email: true, firstName: true, lastName: true } },
+                course: { select: { id: true, courseTitle: true, slug: true } },
+                enrollment: { select: { status: true, completedAt: true } },
+            }
+            : undefined;
+
+        let certificate;
+        if (existingCertificateId) {
+            certificate = await prisma.certificate.update({
+                where: { id: existingCertificateId },
+                data: certificateData,
+                include,
+            });
+        } else {
+            certificate = await prisma.certificate.create({
+                data: { id: certificateId, ...certificateData },
+                include,
+            });
+        }
+
+        try {
+            await notificationService.notifyCertificateReady({
+                userId: enrollment.user.id,
+                courseTitle,
+                tenantId,
+                pdfUrl: certificate.pdfUrl,
+            });
+        } catch (err) {
+            log.error(`Could not send certificate notification: ${err.message}`);
+        }
+
+        return certificate;
+    }
+
+    _pdfFileExists(certificateId) {
+        return fs.existsSync(path.join(PDF_DIR, `${certificateId}.pdf`));
     }
 
     _formatCertificate(cert, locale) {
@@ -639,11 +670,9 @@ export class CertificateService {
         }
         if (!requestingUser) throw new Error('User not found');
 
-
         if (requestingUser.level === 'PLATFORM_ADMIN') return;
 
-
-        if (requestingUser.level === 'LICENSEE') {
+        if (requestingUser.level === 'LICENSE_USER') {
             const inTenant =
                 requestingUser.tenantId === enrollment.user.tenantId ||
                 requestingUser.tenantId === enrollment.course.tenantId;
@@ -651,11 +680,9 @@ export class CertificateService {
             throw new Error('Permission denied: User is not in your tenant');
         }
 
-
         if (requestingUser.level === 'COMPANY_ADMIN') {
             if (!requestingUser.companyId) throw new Error('Company Admin has no company assigned');
 
-            // enrolled user
             const enrolledUserCompany = await prisma.user.findUnique({
                 where: { id: enrollment.userId },
                 select: { companyId: true },
@@ -663,7 +690,6 @@ export class CertificateService {
             if (enrolledUserCompany?.companyId === requestingUser.companyId) return;
             throw new Error('Permission denied: This employee is not in your company');
         }
-
 
         if (['TEACHER', 'TUTOR'].includes(requestingUser.level)) {
             const teacherCourse = await prisma.course.findFirst({
@@ -684,38 +710,28 @@ export class CertificateService {
         throw new Error('Permission denied: Insufficient privileges to generate certificates');
     }
 
-    // Stub: replace with real PDF generation
-    async _generatePdf(enrollment, companyLogoUrl) {
-        const baseUrl = config.BACKEND_URL || 'http://localhost:3000';
-        return `${baseUrl}/uploads/certificates/${enrollment.id}-${Date.now()}.pdf`;
-    }
-
-    // QR code pointing to the public verify endpoint
-    async _generateQrCode(enrollment) {
-        const verifyUrl = `${config.CLIENT_URL || 'http://localhost:5173'}/verify/${enrollment.id}`;
+    _generateQrCode(certificateId) {
+        const verifyUrl = `${config.CLIENT_URL || 'http://localhost:5173'}/verify/${certificateId}`;
         return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(verifyUrl)}`;
     }
 
-    // Safely resolve a localized JSON title field
+    _resolveStudentName(user) {
+        const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+        return fullName || user.email;
+    }
+
+    _resolveOrganizationName(enrollment) {
+        if (enrollment.companyContext?.name) return enrollment.companyContext.name;
+        if (enrollment.user.company?.name) return enrollment.user.company.name;
+        if (enrollment.course.tenant?.name) return enrollment.course.tenant.name;
+        return 'LMS Platform';
+    }
+
     _resolveTitle(titleJson, locale = 'it') {
         if (!titleJson) return 'Course';
         if (typeof titleJson === 'string') return titleJson;
-        return titleJson[locale] || titleJson['it'] || titleJson['en'] || Object.values(titleJson)[0] || 'Course';
+        return titleJson[locale] || titleJson.it || titleJson.en || Object.values(titleJson)[0] || 'Course';
     }
 }
 
 export const certificateService = new CertificateService();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
