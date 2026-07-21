@@ -1,3 +1,4 @@
+// src/features/user/user.validation.js
 import { z } from 'zod';
 
 const SUPPORTED_LOCALES = ['it', 'en', 'fr', 'zh'];
@@ -24,6 +25,8 @@ export const updateProfileSchema = z
     serviceType: z.string().min(2).max(100).optional(),
     contactNumber: z.string().min(6).max(32).optional(),
     preferredLanguage: z.enum(SUPPORTED_LOCALES).optional(),
+    citizenship: z.enum(['ITALIAN', 'FOREIGN']).optional(),
+    avatar: z.string().url().optional(), // ✅ Using 'avatar' to match Prisma
   })
   .refine(
     (d) =>
@@ -40,10 +43,15 @@ export const updateProfileSchema = z
       d.companyPosition !== undefined ||
       d.serviceType !== undefined ||
       d.contactNumber !== undefined ||
-      d.preferredLanguage !== undefined,
+      d.preferredLanguage !== undefined ||
+      d.citizenship !== undefined ||
+      d.avatar !== undefined,
     { message: 'At least one field must be provided' },
   );
 
+export const updateAvatarSchema = z.object({
+  avatar: z.string().url('Invalid avatar URL'),
+});
 export const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1),

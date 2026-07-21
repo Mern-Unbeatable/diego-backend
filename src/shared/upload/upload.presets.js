@@ -47,6 +47,15 @@ export const parseCourseJsonFields = (req, res, next) => {
     next();
 };
 
+export const uploadUserAvatar = createUploadMiddleware([
+    {
+        name: 'avatar',
+        folder: 'users/avatars',
+        type: 'image',
+        maxCount: 1,
+        maxSizeMB: 5
+    },
+]);
 
 export const uploadLessonFiles = createUploadMiddleware([
     { name: 'contentUrl', folder: 'lessons/files', type: 'any', maxCount: 1, maxSizeMB: 200 },

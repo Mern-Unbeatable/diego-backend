@@ -1137,15 +1137,15 @@ model StaffDocument {
 }
 
 model User {
-  id         String     @id @default(uuid())
-  email      String     @unique
-  password   String?
-  level      UserLevel  @default(PRIVATE_USER)
-  status     UserStatus @default(PENDING)
-  isVerified Boolean    @default(false)
-  isActive   Boolean    @default(true)
-  verifiedAt DateTime?
-
+  id                String          @id @default(uuid())
+  email             String          @unique
+  password          String?
+  level             UserLevel       @default(PRIVATE_USER)
+  status            UserStatus      @default(PENDING)
+  isVerified        Boolean         @default(false)
+  isActive          Boolean         @default(true)
+  verifiedAt        DateTime?
+  avatar            String?
   preferredLanguage SupportedLocale @default(it)
 
   firstName        String?

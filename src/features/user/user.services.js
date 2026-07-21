@@ -1,3 +1,4 @@
+
 import { prisma } from '../../config/db.js';
 import { localizeObject } from '../../shared/services/translate/translate.service.js';
 import { userSafeSelect } from '../auth/auth.utils.js';
@@ -7,7 +8,6 @@ const PACKAGE_I18N_KEYS = ['name', 'description'];
 const QUIZ_I18N_KEYS = ['quizTitle'];
 
 class UserService {
-
 
   async createUser(data) {
     return prisma.user.create({ data, select: userSafeSelect });
@@ -29,13 +29,13 @@ class UserService {
     return prisma.user.findUnique({ where: { email } });
   }
 
-
+  // ===== GET FULL PROFILE WITH AVATAR =====
   async getFullProfile(id, locale = 'it') {
     const user = await prisma.user.findUnique({
       where: { id },
       select: {
         ...userSafeSelect,
-
+        avatar: true, // ✅ Using 'avatar' field name
         company: {
           select: {
             id: true,
@@ -48,7 +48,6 @@ class UserService {
             logoUrl: true,
           },
         },
-
         enrollments: {
           orderBy: { createdAt: 'desc' },
           take: 10,
@@ -80,7 +79,6 @@ class UserService {
             },
           },
         },
-
         license: {
           select: {
             id: true,
@@ -108,7 +106,6 @@ class UserService {
             autoRenew: true,
           },
         },
-
         archiveSubscription: {
           select: {
             isActive: true,
@@ -117,7 +114,6 @@ class UserService {
             startedAt: true,
           },
         },
-
         _count: {
           select: {
             enrollments: true,
@@ -153,23 +149,35 @@ class UserService {
     };
   }
 
+  // ===== UPDATE PROFILE WITH AVATAR =====
   async updateProfile(id, data) {
     const allowed = {};
+
+    // Personal info
     if (data.firstName !== undefined) allowed.firstName = data.firstName;
     if (data.lastName !== undefined) allowed.lastName = data.lastName;
     if (data.residenceAddress !== undefined) allowed.residenceAddress = data.residenceAddress;
     if (data.city !== undefined) allowed.city = data.city;
     if (data.country !== undefined) allowed.country = data.country;
     if (data.traineeTaxCode !== undefined) allowed.traineeTaxCode = data.traineeTaxCode;
+
+    // Company info
     if (data.companyName !== undefined) allowed.companyName = data.companyName;
     if (data.companyAddress !== undefined) allowed.companyAddress = data.companyAddress;
     if (data.companyTaxCode !== undefined) allowed.companyTaxCode = data.companyTaxCode;
     if (data.companyVatNumber !== undefined) allowed.companyVatNumber = data.companyVatNumber;
     if (data.companyPosition !== undefined) allowed.companyPosition = data.companyPosition;
+
+    // Other info
     if (data.serviceType !== undefined) allowed.serviceType = data.serviceType;
     if (data.contactNumber !== undefined) allowed.contactNumber = data.contactNumber;
     if (data.preferredLanguage !== undefined) allowed.preferredLanguage = data.preferredLanguage;
     if (data.citizenship !== undefined) allowed.citizenship = data.citizenship;
+
+    // ✅ Avatar field (matches Prisma schema)
+    if (data.avatar !== undefined) {
+      allowed.avatar = data.avatar;
+    }
 
     if (Object.keys(allowed).length === 0) throw new Error('No valid fields to update');
     if (allowed.firstName || allowed.lastName) allowed.profileCompleted = true;
@@ -177,7 +185,31 @@ class UserService {
     return prisma.user.update({
       where: { id },
       data: allowed,
-      select: userSafeSelect,
+      select: {
+        ...userSafeSelect,
+        avatar: true, // Include avatar in response
+      },
+    });
+  }
+
+
+  // ===== UPDATE AVATAR ONLY - FIXED =====
+  async updateAvatar(id, data) {
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, avatar: true }
+    });
+    if (!user) throw new Error('User not found');
+
+    return prisma.user.update({
+      where: { id },
+      data: {
+        avatar: data.avatar,
+      },
+      select: {
+        ...userSafeSelect,
+        avatar: true,
+      },
     });
   }
 
@@ -193,6 +225,7 @@ class UserService {
           companyId: true,
           isActive: true,
           status: true,
+          avatar: true, // ✅ Using 'avatar'
         },
       }),
       prisma.enrollment.groupBy({
@@ -229,6 +262,7 @@ class UserService {
       hasCompany: !!user.companyId,
       isActive: user.isActive,
       status: user.status,
+      avatar: user.avatar, // ✅ Using 'avatar'
       enrollmentsByStatus: enrollmentsByStatus.reduce((acc, row) => {
         acc[row.status] = row._count._all;
         return acc;
@@ -240,55 +274,6 @@ class UserService {
           expiresAt: nextExpiry.expiresAt,
         }
         : null,
-    };
-  }
-
-  async getMyEnrollments(userId, queryParams = {}, locale = 'it') {
-    const page = parseInt(queryParams.page) || 1;
-    const limit = Math.min(parseInt(queryParams.limit) || 20, 100);
-    const skip = (page - 1) * limit;
-
-    const where = { userId };
-    if (queryParams.status) where.status = queryParams.status;
-
-    const [enrollments, total] = await Promise.all([
-      prisma.enrollment.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-        include: {
-          course: {
-            select: {
-              id: true,
-              courseTitle: true,
-              slug: true,
-              description: true,
-              thumbnailUrl: true,
-              format: true,
-            },
-          },
-          certificate: {
-            select: {
-              id: true,
-              status: true,
-              pdfUrl: true,
-              downloadableUntil: true,
-            },
-          },
-        },
-      }),
-      prisma.enrollment.count({ where }),
-    ]);
-
-    const localizedEnrollments = enrollments.map((e) => ({
-      ...e,
-      course: localizeObject(e.course, locale, COURSE_I18N_KEYS),
-    }));
-
-    return {
-      meta: { page, limit, total, totalPage: Math.ceil(total / limit) },
-      enrollments: localizedEnrollments,
     };
   }
 
@@ -321,6 +306,7 @@ class UserService {
         where,
         select: {
           ...userSafeSelect,
+          avatar: true, // ✅ Using 'avatar'
           company: {
             select: {
               id: true,
@@ -362,6 +348,7 @@ class UserService {
       where: { id },
       select: {
         ...userSafeSelect,
+        avatar: true, // ✅ Using 'avatar'
         company: {
           select: {
             id: true,
@@ -508,6 +495,7 @@ class UserService {
         status: true,
         level: true,
         isActive: true,
+        avatar: true, // ✅ Using 'avatar'
       },
     });
   }
@@ -528,6 +516,7 @@ class UserService {
         status: true,
         isActive: true,
         level: true,
+        avatar: true, // ✅ Using 'avatar'
       },
     });
   }
@@ -543,7 +532,10 @@ class UserService {
     return prisma.user.update({
       where: { id },
       data: { lastLoginAt: new Date() },
-      select: userSafeSelect,
+      select: {
+        ...userSafeSelect,
+        avatar: true,
+      },
     });
   }
 }
