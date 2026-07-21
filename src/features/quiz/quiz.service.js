@@ -35,7 +35,7 @@ class QuizService {
 
         if (user?.level === 'PLATFORM_ADMIN') return course;
 
-        if (user?.level === 'LICENSEE') {
+        if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (!tenantId) throw new Error('Licensee user must have a tenant');
             if (course.tenantId !== tenantId) {
@@ -53,7 +53,7 @@ class QuizService {
         });
         if (!quiz) return null;
 
-        if (user?.level === 'LICENSEE') {
+        if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (!tenantId || quiz.tenantId !== tenantId) return null;
         }
@@ -85,7 +85,7 @@ class QuizService {
         });
         if (!course) throw new Error('Course not found');
 
-        if (user?.level === 'LICENSEE') {
+        if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (!tenantId || course.tenantId !== tenantId) {
                 throw new Error('You do not have permission to view quizzes for this course');
@@ -112,7 +112,7 @@ class QuizService {
         const quiz = await prisma.quiz.findUnique({ where: { id: quizId }, select: quizDetailSelect });
         if (!quiz) return null;
 
-        if (user?.level === 'LICENSEE') {
+        if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (!tenantId || quiz.tenantId !== tenantId) return null;
         }
@@ -238,7 +238,7 @@ class QuizService {
         });
         if (!quiz) throw new Error('Quiz not found');
 
-        if (user?.level === 'LICENSEE') {
+        if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (!tenantId || quiz.tenantId !== tenantId) throw new Error('Quiz not found or permission denied');
         }
@@ -257,7 +257,7 @@ class QuizService {
         });
         if (!quiz) throw new Error('Quiz not found');
 
-        if (user?.level === 'LICENSEE') {
+        if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (!tenantId || quiz.tenantId !== tenantId) throw new Error('Quiz not found or permission denied');
         }
@@ -386,7 +386,7 @@ class QuizService {
         });
         if (!attempt) throw new Error('Attempt not found');
 
-        if (user?.level === 'LICENSEE') {
+        if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (!tenantId || attempt.quiz.tenantId !== tenantId) throw new Error('Permission denied');
         }

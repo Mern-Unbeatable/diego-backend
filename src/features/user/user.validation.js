@@ -73,7 +73,7 @@ export const setVerifiedSchema = z.object({
 
 export const setLevelSchema = z.object({
   level: z.enum(
-    ['PRIVATE_USER', 'COMPANY_ADMIN', 'COMPANY_EMPLOYEE', 'LICENSEE', 'MASTER_ADMIN', 'PLATFORM_ADMIN'],
+    ['PRIVATE_USER', 'COMPANY_ADMIN', 'COMPANY_EMPLOYEE', 'LICENSE_USER', 'MASTER_ADMIN', 'PLATFORM_ADMIN'],
     { required_error: 'level is required' },
   ),
 });

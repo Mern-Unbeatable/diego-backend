@@ -13,7 +13,7 @@ router.get('/:lessonId', lessonController.getLessonById);
 router.patch('/:lessonId/progress', lessonController.trackProgress);
 router.get('/:lessonId/status', lessonController.getLessonStatus);
 
-const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSEE');
+const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSE_USER');
 router.patch('/:lessonId', adminGuard, lessonController.updateLesson);
 
 

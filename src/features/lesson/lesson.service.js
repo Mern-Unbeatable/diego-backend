@@ -777,7 +777,7 @@ export class LessonService {
 
         if (userLevel === 'PLATFORM_ADMIN') return;
 
-        if (userLevel === 'LICENSEE') {
+        if (userLevel === 'LICENSE_USER') {
             const dbUser = await prisma.user.findUnique({
                 where: { id: userId },
                 select: { tenantId: true },

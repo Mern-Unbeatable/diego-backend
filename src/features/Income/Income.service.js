@@ -98,7 +98,7 @@ export class IncomeService {
         if (ownerLicense) {
             return {
                 paymentId: payment.id,
-                category: 'LICENSEE_COURSE',
+                category: 'LICENSE_USER_COURSE',
                 flowType: context.flowType,
                 platformAmount: 0,
                 licenseeAmount: amount,
@@ -215,7 +215,7 @@ export class IncomeService {
         }
 
         // Permission check
-        if (user?.level === 'LICENSEE') {
+        if (user?.level === 'LICENSE_USER') {
             const licensee = await prisma.license.findUnique({
                 where: { userId: user.id },
                 select: { id: true }
@@ -334,7 +334,7 @@ export class IncomeService {
         const where = {};
 
         // ── Permission Check ──
-        if (user?.level === 'LICENSEE') {
+        if (user?.level === 'LICENSE_USER') {
             const licensee = await prisma.license.findUnique({
                 where: { userId: user.id },
                 select: { id: true }
@@ -477,7 +477,7 @@ export class IncomeService {
 
     async getIncomeByLicenseId(licenseId, queryParams = {}, user = null) {
         // Check permission
-        if (user?.level === 'LICENSEE') {
+        if (user?.level === 'LICENSE_USER') {
             const licensee = await prisma.license.findUnique({
                 where: { userId: user.id },
                 select: { id: true }
@@ -549,7 +549,7 @@ export class IncomeService {
 
         return this.getIncomeDetails(
             { ...queryParams, licenseId: licensee.id },
-            { id: userId, level: 'LICENSEE' },
+            { id: userId, level: 'LICENSE_USER' },
         );
     }
 
@@ -573,7 +573,7 @@ export class IncomeService {
             };
         }
 
-        return this.getIncomeSummary(licensee.id, { id: userId, level: 'LICENSEE' });
+        return this.getIncomeSummary(licensee.id, { id: userId, level: 'LICENSE_USER' });
     }
 
     async getPlatformIncomeSummary(queryParams = {}, user = null) {

@@ -7,26 +7,27 @@ import { licenseController } from './license.controller.js';
 const router = express.Router();
 
 router.use(tenantMiddleware);
+
+// Public — no login required
+router.get('/plans', i18nMiddleware, licenseController.getPlans);
+
 router.use(authMiddleware.protect);
 router.use(i18nMiddleware);
 
-// Public (no auth needed for plan listing)
-router.get('/plans', licenseController.getPlans);
+const licenseUserGuard = authMiddleware.authorize('LICENSE_USER', 'PLATFORM_ADMIN');
 
-// ── Licensee self-service routes ──────────────────────────────────────────
+// ── License user self-service ──
+router.get('/my', licenseUserGuard, licenseController.getMyLicenses);
+router.get('/my/detail', licenseUserGuard, licenseController.getMyLicense);
+router.patch('/my', licenseUserGuard, licenseController.updateMyLicense);
+router.get('/my/stats', licenseUserGuard, licenseController.getMyLicenseStats);
 
-router.get('/my', licenseController.getMyLicenses);
-router.get('/my/detail', licenseController.getMyLicense);
-router.patch('/my', licenseController.updateMyLicense);
-router.post('/my/renew', licenseController.renewMyLicense);
-router.get('/my/stats', licenseController.getMyLicenseStats);
-
-// ── Checkout / payment ────────────────────────────────────────────────────
-router.post('/checkout', licenseController.createLicenseCheckout);
-router.post('/renewal/checkout', licenseController.createRenewalCheckout);
+// ── Checkout / payment ──
+router.post('/checkout', licenseUserGuard, licenseController.createLicenseCheckout);
+router.post('/renewal/checkout', licenseUserGuard, licenseController.createRenewalCheckout);
 router.get('/verify-payment', licenseController.verifyLicensePayment);
 
-// ── Admin only ────────────────────────────────────────────────────────────
+// ── Admin only ──
 const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN');
 
 router.post('/', adminGuard, licenseController.createLicense);

@@ -27,7 +27,7 @@ router.get('/renew/company-course/verify', companyGuard, paymentController.verif
 
 router.get('/my', paymentController.getMyPayments);
 
-const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSEE');
+const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSE_USER');
 router.get('/admin/all', adminGuard, paymentController.getAllPayments);
 
 export const paymentRoutes = router;

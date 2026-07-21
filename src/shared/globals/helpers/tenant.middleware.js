@@ -234,12 +234,12 @@ export const tenantGuard = (req, res, next) => {
         return next();
     }
 
-    // Licensee users can only access their own tenant
-    if (user?.level === 'LICENSEE') {
+    // License users can only access their own tenant
+    if (user?.level === 'LICENSE_USER') {
         if (!user.tenantId) {
             return res.status(403).json({
                 status: 'error',
-                message: 'Licensee user must have a tenant'
+                message: 'License user must have a tenant'
             });
         }
         if (tenantId && user.tenantId !== tenantId) {

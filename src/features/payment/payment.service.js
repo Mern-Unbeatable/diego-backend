@@ -477,8 +477,13 @@ class PaymentService {
         if (!user.tenantId) {
           const tenant = await tx.tenant.create({ data: { name: `${companyName || 'My'} Academy`, subdomain, customDomain, primaryColor: '#0F62FE', isActive: true, ownerId: userId } });
           tenantId = tenant.id;
-          await tx.user.update({ where: { id: userId }, data: { tenantId } });
-        } else tenantId = user.tenantId;
+          await tx.user.update({ where: { id: userId }, data: { tenantId, level: 'LICENSE_USER' } });
+        } else {
+          tenantId = user.tenantId;
+          await tx.user.update({ where: { id: userId }, data: { level: 'LICENSE_USER' } });
+        }
+      } else {
+        await tx.user.update({ where: { id: userId }, data: { tenantId, level: 'LICENSE_USER' } });
       }
 
       const startsAt = new Date();
@@ -1099,9 +1104,25 @@ class PaymentService {
       const plan = await prisma.licensePlan.findUnique({ where: { id: planId } });
       if (!plan) throw new Error('Plan not found');
       const daysToAdd = billingCycle === 'YEARLY' ? 365 : 30;
-      const newExpiresAt = addDays(license.expiresAt, daysToAdd);
+      const baseDate = license.expiresAt < new Date() ? new Date() : license.expiresAt;
+      const newExpiresAt = addDays(baseDate, daysToAdd);
       const renewal = await prisma.licenseRenewal.create({ data: { licenseId: license.id, previousExpiresAt: license.expiresAt, newExpiresAt, planId: plan.id, amount: payment.amount, paymentId: payment.id }, include: { plan: true } });
-      const updatedLicense = await prisma.license.update({ where: { id: license.id }, data: { expiresAt: newExpiresAt, planId: plan.id, maxUsers: plan.maxUsers, maxCourses: plan.maxCourses, storageMb: plan.storageMb, billingCycle }, include: { plan: true, user: true } });
+      const updatedLicense = await prisma.license.update({
+        where: { id: license.id },
+        data: {
+          expiresAt: newExpiresAt,
+          planId: plan.id,
+          maxUsers: plan.maxUsers,
+          maxCourses: plan.maxCourses,
+          storageMb: plan.storageMb,
+          billingCycle,
+          isSuspended: false,
+        },
+        include: { plan: true, user: true, tenant: true },
+      });
+      if (license.tenantId) {
+        await prisma.tenant.update({ where: { id: license.tenantId }, data: { isActive: true } });
+      }
       return { paid: true, type: 'renewal', license: updatedLicense, renewal, payment };
     }
     return { paid: true, processed: true, payment };
@@ -1165,7 +1186,7 @@ class PaymentService {
     const skip = (page - 1) * limit;
     const where = {};
     if (user?.level === 'PLATFORM_ADMIN') { if (queryParams.tenantId) where.tenantId = queryParams.tenantId; }
-    else if (user?.level === 'LICENSEE') { if (!user.tenantId) throw new Error('Licensee must have a tenant'); where.tenantId = user.tenantId; }
+    else if (user?.level === 'LICENSE_USER') { if (!user.tenantId) throw new Error('License user must have a tenant'); where.tenantId = user.tenantId; }
     else throw new Error('Access denied');
     if (queryParams.status) where.status = queryParams.status;
     if (queryParams.type) where.type = queryParams.type;

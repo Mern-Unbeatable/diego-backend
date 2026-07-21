@@ -27,7 +27,12 @@ class LicenseService {
             durationDays = 365,
             autoRenew = false,
             billingCycle = 'YEARLY',
+            waivePayment = false,
         } = data;
+
+        if (requestingUser?.level !== 'PLATFORM_ADMIN') {
+            throw new Error('Only Platform Administrators can create licenses.');
+        }
 
         const plan = await prisma.licensePlan.findUnique({
             where: { tier: planTier },
@@ -55,14 +60,14 @@ class LicenseService {
         let userId = existingUserId;
         let tenantId = null;
 
-        // ── TRANSACTION 1: Create User & Tenant (Fast DB operations) ──
+        // ── TRANSACTION 1: Create or validate user ──
         await prisma.$transaction(async (tx) => {
             if (!userId) {
                 if (!email) throw new Error('Either userId or email must be provided.');
                 const existing = await tx.user.findUnique({ where: { email }, select: { id: true, level: true } });
                 if (existing) {
-                    if (existing.level !== 'LICENSEE') {
-                        throw new Error(`User ${email} already exists but is not a LICENSEE.`);
+                    if (existing.level !== 'LICENSE_USER') {
+                        throw new Error(`User ${email} already exists but is not a license user.`);
                     }
                     const hasLicense = await tx.license.findUnique({ where: { userId: existing.id }, select: { id: true } });
                     if (hasLicense) throw new Error(`User ${email} already has a license.`);
@@ -75,7 +80,7 @@ class LicenseService {
                             password: hashed,
                             firstName: firstName ?? null,
                             lastName: lastName ?? null,
-                            level: 'LICENSEE',
+                            level: 'LICENSE_USER',
                             status: 'ACTIVE',
                             isVerified: true,
                             isActive: true,
@@ -89,21 +94,39 @@ class LicenseService {
                     userId = newUser.id;
                 }
             } else {
-                const user = await tx.user.findUnique({ where: { id: userId }, select: { id: true, level: true } });
+                const user = await tx.user.findUnique({ where: { id: userId }, select: { id: true, level: true, tenantId: true } });
                 if (!user) throw new Error('User not found.');
-                if (user.level !== 'LICENSEE') throw new Error('Only LICENSEE users can hold a license.');
+                if (user.level !== 'LICENSE_USER') throw new Error('Only license users can hold a license.');
                 const hasLicense = await tx.license.findUnique({ where: { userId }, select: { id: true } });
                 if (hasLicense) throw new Error('This user already has a license.');
+                tenantId = user.tenantId;
             }
+        });
 
-            const tenantSubdomain = subdomain;
-            const tenantDomain = customDomain;
+        if (!waivePayment) {
+            const licenseUser = await prisma.user.findUnique({ where: { id: userId } });
+            return this.createLicenseCheckout({
+                planId: plan.id,
+                billingCycle,
+                couponCode: data.couponCode,
+                companyName,
+                subdomain,
+                customDomain,
+                phoneNumber,
+                emailAddress,
+                certifiedEmail,
+                vatNumber,
+                vatPercentage,
+            }, licenseUser);
+        }
 
+        // ── Admin waived payment: create tenant + active license immediately ──
+        await prisma.$transaction(async (tx) => {
             const tenant = await tx.tenant.create({
                 data: {
                     name: `${companyName} Academy`,
-                    subdomain: tenantSubdomain,
-                    customDomain: tenantDomain,
+                    subdomain,
+                    customDomain,
                     primaryColor: '#0F62FE',
                     isActive: true,
                     ownerId: userId,
@@ -112,41 +135,18 @@ class LicenseService {
 
             await tx.user.update({
                 where: { id: userId },
-                data: { tenantId: tenant.id },
+                data: { tenantId: tenant.id, level: 'LICENSE_USER' },
             });
 
             tenantId = tenant.id;
         });
 
-        // ── OUTSIDE TRANSACTION: Create Payment (Calls Stripe API - Slow) ──
-        const payment = await paymentService.createLicensePayment({
-            userId,
-            licenseId: null, // License not created yet
-            planId: plan.id,
-            amount: price,
-            billingCycle,
-            couponCode: data.couponCode,
-            vatPercentage,
-            tenantId: tenantId,
-        });
-
-        // ── TRANSACTION 2: Create License and Link Payment (Fast DB operations) ──
         const tenantSubdomain = subdomain;
         const tenantDomain = customDomain;
 
         const license = await prisma.$transaction(async (tx) => {
             const hasLicense = await tx.license.findUnique({ where: { userId }, select: { id: true } });
-            if (hasLicense) {
-                return tx.license.update({
-                    where: { id: hasLicense.id },
-                    data: { paymentId: payment.id },
-                    include: {
-                        user: { select: { id: true, email: true, firstName: true, lastName: true } },
-                        tenant: { select: { id: true, name: true, subdomain: true, customDomain: true } },
-                        plan: true,
-                    },
-                });
-            }
+            if (hasLicense) throw new Error('This user already has a license.');
 
             const startsAt = new Date();
             const expiresAt = addDays(startsAt, durationDays);
@@ -154,7 +154,7 @@ class LicenseService {
             return tx.license.create({
                 data: {
                     userId,
-                    tenantId: tenantId,
+                    tenantId,
                     planId: plan.id,
                     companyName,
                     phoneNumber: phoneNumber ?? null,
@@ -173,7 +173,6 @@ class LicenseService {
                     expiresAt,
                     autoRenew,
                     isSuspended: false,
-                    paymentId: payment.id,
                 },
                 include: {
                     user: { select: { id: true, email: true, firstName: true, lastName: true } },
@@ -183,12 +182,13 @@ class LicenseService {
             });
         });
 
-        log.info(`License created: ${license.id} with payment: ${payment.id}`);
+        log.info(`License activated by admin (waived payment): ${license.id}`);
 
         return {
             license,
-            payment,
-            checkoutUrl: payment.checkoutUrl,
+            payment: null,
+            checkoutUrl: null,
+            message: 'License activated without payment.',
         };
     }
 
@@ -231,21 +231,18 @@ class LicenseService {
         });
     }
     async renewLicense(userId, data, requestingUser = null) {
-        // Allow: platform admin OR the licensee themselves
-        const isSelf = requestingUser?.id === userId;
         const isAdmin = requestingUser?.level === 'PLATFORM_ADMIN';
-        if (!isSelf && !isAdmin) {
-            throw new Error('You can only renew your own license.');
+        if (!isAdmin) {
+            throw new Error('Only Platform Administrators can renew licenses directly. Use renewal checkout instead.');
         }
 
-        const { daysToAdd = 365, planTier, billingCycle = 'YEARLY', couponCode, paymentId } = data;
+        const { daysToAdd = 365, planTier, billingCycle = 'YEARLY', couponCode, paymentId, waivePayment = false } = data;
 
         const license = await prisma.license.findUnique({
             where: { userId },
             select: { id: true, expiresAt: true, planId: true, tenantId: true, vatPercentage: true, isSuspended: true },
         });
         if (!license) throw new Error('License not found.');
-        if (license.isSuspended && !isAdmin) throw new Error('Your license is suspended. Contact support to renew.');
 
         let plan = null;
         if (planTier) {
@@ -260,13 +257,8 @@ class LicenseService {
             ? plan.priceMonthly
             : (plan.priceAnnual || plan.priceYearly || plan.priceMonthly * 12);
 
-        // If already expired, renew from today; otherwise extend from expiry
-        const baseDate = license.expiresAt < new Date() ? new Date() : license.expiresAt;
-        const newExpiresAt = addDays(baseDate, daysToAdd);
-
-        let finalPaymentId = paymentId;
-        if (!finalPaymentId) {
-            const payment = await paymentService.createLicenseRenewalPayment({
+        if (!waivePayment && !paymentId) {
+            const checkout = await paymentService.createLicenseRenewalPayment({
                 userId,
                 licenseId: license.id,
                 planId: plan.id,
@@ -276,8 +268,39 @@ class LicenseService {
                 vatPercentage: license.vatPercentage || 22,
                 tenantId: license.tenantId,
             });
-            finalPaymentId = payment.id;
+            return {
+                checkoutUrl: checkout.checkoutUrl,
+                sessionId: checkout.sessionId,
+                payment: checkout.payment,
+                message: 'Complete payment to renew the license.',
+            };
         }
+
+        if (paymentId && !waivePayment) {
+            const payment = await prisma.payment.findUnique({
+                where: { id: paymentId },
+                select: { id: true, status: true, amount: true },
+            });
+            if (!payment) throw new Error('Payment not found.');
+            if (payment.status !== 'SUCCESS') {
+                throw new Error('Payment must be completed before renewing the license.');
+            }
+        }
+
+        return this._applyLicenseRenewal({
+            license,
+            plan,
+            daysToAdd,
+            billingCycle,
+            amount: waivePayment ? price : undefined,
+            paymentId: waivePayment ? null : paymentId,
+        });
+    }
+
+    async _applyLicenseRenewal({ license, plan, daysToAdd, billingCycle, amount, paymentId }) {
+        const baseDate = license.expiresAt < new Date() ? new Date() : license.expiresAt;
+        const newExpiresAt = addDays(baseDate, daysToAdd);
+        const renewalAmount = amount ?? plan.priceAnnual ?? plan.priceYearly ?? plan.priceMonthly * 12;
 
         return prisma.$transaction(async (tx) => {
             const renewal = await tx.licenseRenewal.create({
@@ -286,23 +309,23 @@ class LicenseService {
                     previousExpiresAt: license.expiresAt,
                     newExpiresAt,
                     planId: plan.id,
-                    amount: price,
-                    paymentId: finalPaymentId,
+                    amount: renewalAmount,
+                    paymentId: paymentId ?? null,
                 },
                 include: { plan: true },
             });
 
             const updated = await tx.license.update({
-                where: { userId },
+                where: { id: license.id },
                 data: {
                     expiresAt: newExpiresAt,
                     planId: plan.id,
                     maxUsers: plan.maxUsers,
                     maxCourses: plan.maxCourses,
                     storageMb: plan.storageMb,
-                    priceAtPurchase: price,
+                    priceAtPurchase: renewalAmount,
                     billingCycle,
-                    isSuspended: false, // auto-unsuspend on renewal if admin renews
+                    isSuspended: false,
                 },
                 include: {
                     user: { select: { id: true, email: true, firstName: true, lastName: true } },
@@ -310,6 +333,13 @@ class LicenseService {
                     payment: true,
                 },
             });
+
+            if (license.tenantId) {
+                await tx.tenant.update({
+                    where: { id: license.tenantId },
+                    data: { isActive: true },
+                });
+            }
 
             log.info(`License renewed: ${license.id} → expires ${newExpiresAt.toISOString()}`);
             return { license: updated, renewal, newExpiresAt, daysAdded: daysToAdd, plan };
@@ -330,15 +360,31 @@ class LicenseService {
             vatNumber,
             vatPercentage,
         } = data;
+
+        const existingLicense = await prisma.license.findUnique({
+            where: { userId: requestingUser.id },
+            select: { id: true },
+        });
+        if (existingLicense) throw new Error('You already have a license. Use renewal checkout to extend it.');
+
         const plan = await prisma.licensePlan.findUnique({ where: { id: planId, isActive: true } });
         if (!plan) throw new Error('License plan not found or inactive.');
 
-        const existingSubdomain = await prisma.tenant.findUnique({ where: { subdomain }, select: { id: true } });
-        if (existingSubdomain) throw new Error('Subdomain is already taken.');
-        const existingCustomDomain = await prisma.tenant.findUnique({ where: { customDomain }, select: { id: true } });
-        if (existingCustomDomain) throw new Error('Custom domain is already in use.');
+        const existingSubdomain = await prisma.tenant.findFirst({
+            where: { OR: [{ subdomain }, { customDomain }] },
+            select: { id: true },
+        });
+        if (existingSubdomain) throw new Error('Subdomain or custom domain is already in use.');
 
-        const price = billingCycle === 'MONTHLY' ? plan.priceMonthly : (plan.priceAnnual || plan.priceYearly || plan.priceMonthly * 12);
+        const licenseSubdomainClash = await prisma.license.findFirst({
+            where: { OR: [{ subdomain }, { customDomain }] },
+            select: { id: true },
+        });
+        if (licenseSubdomainClash) throw new Error('Subdomain or custom domain is already reserved.');
+
+        const price = billingCycle === 'MONTHLY'
+            ? plan.priceMonthly
+            : (plan.priceAnnual || plan.priceYearly || plan.priceMonthly * 12);
 
         return paymentService.createLicenseCheckout({
             userId: requestingUser.id,
@@ -360,11 +406,25 @@ class LicenseService {
     }
 
     async createRenewalCheckout(data, requestingUser = null) {
-        const { licenseId, planId, billingCycle = 'YEARLY', couponCode } = data;
-        const license = await prisma.license.findUnique({ where: { id: licenseId }, include: { plan: true } });
+        let { licenseId, planId, billingCycle = 'YEARLY', couponCode } = data;
+
+        let license = null;
+        if (licenseId) {
+            license = await prisma.license.findUnique({ where: { id: licenseId }, include: { plan: true } });
+        } else {
+            license = await prisma.license.findUnique({
+                where: { userId: requestingUser.id },
+                include: { plan: true },
+            });
+            licenseId = license?.id;
+        }
+
         if (!license) throw new Error('License not found.');
         if (license.userId !== requestingUser.id && requestingUser.level !== 'PLATFORM_ADMIN') {
             throw new Error('You can only renew your own license.');
+        }
+        if (license.isSuspended && requestingUser.level !== 'PLATFORM_ADMIN') {
+            throw new Error('Your license is suspended. Contact support to renew.');
         }
 
         let plan = license.plan;

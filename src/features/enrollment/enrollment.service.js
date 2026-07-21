@@ -142,7 +142,7 @@ class EnrollmentService {
 
         if (user?.level === 'PLATFORM_ADMIN') {
             if (queryParams.tenantId) where.course = { tenantId: queryParams.tenantId };
-        } else if (user?.level === 'LICENSEE') {
+        } else if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (!tenantId) throw new Error('Licensee user must have a tenant');
             where.course = { tenantId };
@@ -284,7 +284,7 @@ class EnrollmentService {
 
         if (user?.level === 'PLATFORM_ADMIN') return enrollment;
 
-        if (user?.level === 'LICENSEE') {
+        if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (enrollment.course?.tenantId !== tenantId) return null;
             return enrollment;
@@ -447,7 +447,7 @@ class EnrollmentService {
 
         if (user?.level === 'PLATFORM_ADMIN') {
             // no filter
-        } else if (user?.level === 'LICENSEE') {
+        } else if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (!tenantId) throw new Error('Licensee must have a tenant');
             where.course = { tenantId };
@@ -551,7 +551,7 @@ class EnrollmentService {
 
         if (user?.level === 'PLATFORM_ADMIN') {
             // no filter
-        } else if (user?.level === 'LICENSEE') {
+        } else if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (!tenantId) throw new Error('Licensee user must have a tenant');
             where.tenantId = tenantId;
@@ -570,7 +570,7 @@ class EnrollmentService {
 
         if (user?.level === 'PLATFORM_ADMIN') {
             // no filter
-        } else if (user?.level === 'LICENSEE') {
+        } else if (user?.level === 'LICENSE_USER') {
             const tenantId = await this._resolveTenantId(user);
             if (!tenantId) throw new Error('Licensee user must have a tenant');
             where.tenantId = tenantId;
@@ -611,13 +611,13 @@ class EnrollmentService {
         const skip = (page - 1) * limit;
 
         // Verify user is Licensee or Platform Admin
-        if (!user || !['PLATFORM_ADMIN', 'LICENSEE'].includes(user.level)) {
+        if (!user || !['PLATFORM_ADMIN', 'LICENSE_USER'].includes(user.level)) {
             throw new Error('Only Licensee and Platform Admin can access this endpoint');
         }
 
         // Get tenant ID for filtering
         let tenantId = null;
-        if (user.level === 'LICENSEE') {
+        if (user.level === 'LICENSE_USER') {
             tenantId = await this._resolveTenantId(user);
             if (!tenantId) {
                 throw new Error('Licensee user must have a tenant assigned');
@@ -637,7 +637,7 @@ class EnrollmentService {
         }
 
         // For Licensee, also filter by courses they created
-        if (user.level === 'LICENSEE') {
+        if (user.level === 'LICENSE_USER') {
             where.course = {
                 ...where.course,
                 createdById: user.id // Only courses created by this Licensee
@@ -827,7 +827,7 @@ class EnrollmentService {
         // Get courses created by this licensee
         const courseWhere = {
             ...(tenantId && { tenantId }),
-            ...(user.level === 'LICENSEE' && { createdById: user.id }),
+            ...(user.level === 'LICENSE_USER' && { createdById: user.id }),
         };
 
         const [totalCourses, courseStats, enrollmentStats, statusBreakdown] = await Promise.all([
@@ -901,7 +901,7 @@ class EnrollmentService {
 
 
     async getLicenseeStudents(queryParams = {}, user = null) {
-        if (!user || !['PLATFORM_ADMIN', 'LICENSEE'].includes(user.level)) {
+        if (!user || !['PLATFORM_ADMIN', 'LICENSE_USER'].includes(user.level)) {
             throw new Error('Only Licensee and Platform Admin can access this endpoint');
         }
 
@@ -910,7 +910,7 @@ class EnrollmentService {
         const skip = (page - 1) * limit;
 
         let tenantId = null;
-        if (user.level === 'LICENSEE') {
+        if (user.level === 'LICENSE_USER') {
             tenantId = await this._resolveTenantId(user);
             if (!tenantId) throw new Error('Licensee user must have a tenant assigned');
         } else if (user.level === 'PLATFORM_ADMIN' && queryParams.tenantId) {
@@ -919,7 +919,7 @@ class EnrollmentService {
 
         const courseWhere = {
             ...(tenantId && { tenantId }),
-            ...(user.level === 'LICENSEE' && { createdById: user.id }),
+            ...(user.level === 'LICENSE_USER' && { createdById: user.id }),
         };
 
         const licenseeCourses = await prisma.course.findMany({
@@ -1143,12 +1143,12 @@ class EnrollmentService {
     }
 
     async getLicenseeStudentDetail(studentId, user = null) {
-        if (!user || !['PLATFORM_ADMIN', 'LICENSEE'].includes(user.level)) {
+        if (!user || !['PLATFORM_ADMIN', 'LICENSE_USER'].includes(user.level)) {
             throw new Error('Permission denied');
         }
 
         let tenantId = null;
-        if (user.level === 'LICENSEE') {
+        if (user.level === 'LICENSE_USER') {
             tenantId = await this._resolveTenantId(user);
             if (!tenantId) throw new Error('Licensee user must have a tenant assigned');
         } else if (user.level === 'PLATFORM_ADMIN') {
@@ -1157,7 +1157,7 @@ class EnrollmentService {
 
         const courseWhere = {
             ...(tenantId && { tenantId }),
-            ...(user.level === 'LICENSEE' && { createdById: user.id }),
+            ...(user.level === 'LICENSE_USER' && { createdById: user.id }),
         };
 
         const licenseeCourses = await prisma.course.findMany({

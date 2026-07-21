@@ -19,7 +19,7 @@ router.patch(
     enrollmentController.updateLessonProgress
 );
 
-const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSEE');
+const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSE_USER');
 
 // Licensee's all course enrollments
 router.get('/licensee/students', adminGuard, tenantGuard, enrollmentController.getLicenseeStudents);

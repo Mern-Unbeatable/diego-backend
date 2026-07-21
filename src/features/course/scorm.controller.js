@@ -87,7 +87,7 @@ class ScormController {
     });
 
     getSessions = catchAsync(async (req, res) => {
-        if (!['PLATFORM_ADMIN', 'LICENSEE'].includes(req.user.level)) {
+        if (!['PLATFORM_ADMIN', 'LICENSE_USER'].includes(req.user.level)) {
             throw new Error('Permission denied: Only admins can view SCORM sessions');
         }
 
@@ -105,7 +105,7 @@ class ScormController {
     getSessionDetails = catchAsync(async (req, res) => {
         const { sessionId } = req.params;
 
-        if (!['PLATFORM_ADMIN', 'LICENSEE'].includes(req.user.level)) {
+        if (!['PLATFORM_ADMIN', 'LICENSE_USER'].includes(req.user.level)) {
             throw new Error('Permission denied: Only admins can view session details');
         }
 

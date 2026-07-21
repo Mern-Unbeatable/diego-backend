@@ -44,6 +44,7 @@ export const createLicenseSchema = z
         autoRenew: z.boolean().default(false).optional(),
         billingCycle: z.enum(BILLING_CYCLES).default('YEARLY').optional(),
         couponCode: z.string().optional(),
+        waivePayment: z.boolean().default(false).optional(),
     })
     .refine(d => d.userId || d.email, {
         message: 'Either userId or email must be provided.',
@@ -105,7 +106,7 @@ export const createLicenseCheckoutSchema = z.object({
 
 
 export const createLicenseRenewalCheckoutSchema = z.object({
-    licenseId: z.string().uuid('Invalid license ID'),
+    licenseId: z.string().uuid('Invalid license ID').optional(),
     planId: z.string().uuid('Optional - plan to upgrade to').optional(),
     billingCycle: z.enum(BILLING_CYCLES).default('YEARLY'),
     couponCode: z.string().optional(),
@@ -123,4 +124,5 @@ export const renewLicenseSchema = z.object({
     billingCycle: z.enum(BILLING_CYCLES).default('YEARLY').optional(),
     couponCode: z.string().optional(),
     paymentId: z.string().uuid().optional(),
+    waivePayment: z.boolean().default(false).optional(),
 });

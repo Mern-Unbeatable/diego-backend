@@ -9,7 +9,7 @@ const router = express.Router({ mergeParams: true });
 
 router.use(authMiddleware.protect);
 router.use(i18nMiddleware);
-const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSEE');
+const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSE_USER');
 
 router.get('/', lessonController.getLessons);
 router.patch('/reorder', adminGuard, lessonController.reorderLessons);

@@ -9,7 +9,7 @@ router.use(tenantMiddleware);
 router.use(authMiddleware.protect);
 router.use(i18nMiddleware);
 
-const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSEE');
+const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSE_USER');
 
 // ===== STUDENT ROUTES =====
 router.get('/my-progress', quizController.getMyProgress);

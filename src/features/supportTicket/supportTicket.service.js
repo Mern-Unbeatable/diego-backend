@@ -20,7 +20,7 @@ export class SupportTicketService {
             if (queryParams.userId) {
                 where.userId = queryParams.userId;
             }
-        } else if (userLevel === 'LICENSEE') {
+        } else if (userLevel === 'LICENSE_USER') {
             const licenseeUser = await prisma.user.findUnique({
                 where: { id: userId },
                 select: { tenantId: true }
@@ -342,7 +342,7 @@ export class SupportTicketService {
         const userId = user.id;
         if (userLevel === 'PLATFORM_ADMIN') return;
         if (ticket.userId === userId) return;
-        if (userLevel === 'LICENSEE') {
+        if (userLevel === 'LICENSE_USER') {
             const licenseeUser = await prisma.user.findUnique({
                 where: { id: userId },
                 select: { tenantId: true }

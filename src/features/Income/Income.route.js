@@ -10,7 +10,7 @@ router.use(authMiddleware.protect);
 router.use(i18nMiddleware);
 router.get('/my/summary', incomeController.getMyIncomeSummary);
 router.get('/my', incomeController.getMyIncome);
-const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSEE');
+const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSE_USER');
 router.get('/summary', adminGuard, incomeController.getIncomeSummary);
 router.get('/', adminGuard, incomeController.getIncomeDetails);
 router.get('/license/:licenseId', adminGuard, incomeController.getIncomeByLicenseId);
