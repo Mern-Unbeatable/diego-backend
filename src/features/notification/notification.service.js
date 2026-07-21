@@ -4,6 +4,7 @@ import { emailService } from '../../shared/services/emails/emailService.js';
 import { localizeObject } from '../../shared/services/translate/translate.service.js';
 import { addDays, subDays, startOfDay, endOfDay } from 'date-fns';
 
+
 const log = new Logger('NotificationService');
 
 const ENROLLMENT_REMINDER_WINDOWS = [7, 3, 1];
@@ -659,6 +660,55 @@ class NotificationService {
 
     async markAllRead(userId) {
         return this.markAllAsRead(userId);
+    }
+
+    // NEW: certificate.service.js
+    async notifyCertificateReady({ userId, courseTitle, tenantId = null, pdfUrl }) {
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                email: true,
+                firstName: true,
+                lastName: true,
+                preferredLanguage: true,
+                alertsOptOut: true,
+            },
+        });
+
+        if (!user) {
+            log.warn(`notifyCertificateReady: user ${userId} not found`);
+            return null;
+        }
+
+        // In-app notification —
+        await this._createNotification({
+            userId,
+            type: 'CERTIFICATE_READY',
+            tenantId,
+            title: {
+                it: 'Il tuo attestato è pronto',
+                en: 'Your certificate is ready',
+            },
+            message: {
+                it: `Hai completato con successo "${courseTitle}". Il tuo attestato è ora disponibile per il download.`,
+                en: `You have successfully completed "${courseTitle}". Your certificate is now available for download.`,
+                pdfUrl,
+            },
+        });
+
+        if (!user.alertsOptOut && user.email) {
+            await emailService.sendCertificateReady({
+                to: user.email,
+                userName: this._fullName(user),
+                courseTitle,
+                downloadUrl: pdfUrl,
+            });
+            log.info(`Certificate-ready email sent to ${user.email} for course "${courseTitle}"`);
+        } else {
+            log.info(`Certificate-ready email skipped for user ${userId} (opted out or no email)`);
+        }
+
+        return { notified: true, emailSent: !user.alertsOptOut && !!user.email };
     }
 }
 

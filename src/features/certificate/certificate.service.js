@@ -6,6 +6,7 @@ import { config } from '../../config/config.js';
 import { addYears } from 'date-fns';
 import { notificationService } from '../notification/notification.service.js';
 
+
 const log = new Logger('CertificateService');
 
 export class CertificateService {
@@ -95,17 +96,16 @@ export class CertificateService {
 
 
             try {
-                const { notificationService } = await import('../notification/notification.service.js');
                 const courseTitle = this._resolveTitle(
                     enrollment.course.courseTitle,
                     enrollment.user.preferredLanguage
                 );
-                notificationService.notifyCertificateReady({
+                await notificationService.notifyCertificateReady({
                     userId: enrollment.user.id,
                     courseTitle,
                     tenantId: certificate.tenantId,
                     pdfUrl: certificate.pdfUrl,
-                }).catch(err => log.error(`Certificate notification failed: ${err.message}`));
+                });
             } catch (err) {
                 log.error(`Could not send certificate notification: ${err.message}`);
             }
