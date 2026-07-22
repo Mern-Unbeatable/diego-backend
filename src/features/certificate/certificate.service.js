@@ -56,6 +56,56 @@ const ENROLLMENT_INCLUDE = {
 
 export class CertificateService {
 
+    _buildUserNameSearchConditions(term) {
+        if (!term?.trim()) return [];
+        const search = term.trim();
+        return [
+            { user: { email: { contains: search, mode: 'insensitive' } } },
+            { user: { firstName: { contains: search, mode: 'insensitive' } } },
+            { user: { lastName: { contains: search, mode: 'insensitive' } } },
+        ];
+    }
+
+    _buildCourseTitleSearchConditions(term) {
+        if (!term?.trim()) return [];
+        const search = term.trim();
+        return [
+            { course: { courseTitle: { path: ['it'], string_contains: search } } },
+            { course: { courseTitle: { path: ['en'], string_contains: search } } },
+            { course: { courseTitle: { path: ['fr'], string_contains: search } } },
+            { course: { courseTitle: { path: ['zh'], string_contains: search } } },
+            { course: { slug: { contains: search, mode: 'insensitive' } } },
+        ];
+    }
+
+    _applyCertificateSearchFilters(where, queryParams = {}) {
+        const searchGroups = [];
+
+        if (queryParams.search?.trim()) {
+            searchGroups.push({
+                OR: [
+                    ...this._buildUserNameSearchConditions(queryParams.search),
+                    ...this._buildCourseTitleSearchConditions(queryParams.search),
+                ],
+            });
+        } else {
+            if (queryParams.employeeName?.trim()) {
+                searchGroups.push({ OR: this._buildUserNameSearchConditions(queryParams.employeeName) });
+            }
+            if (queryParams.courseName?.trim()) {
+                searchGroups.push({ OR: this._buildCourseTitleSearchConditions(queryParams.courseName) });
+            }
+        }
+
+        if (searchGroups.length === 1) {
+            where.AND = [...(where.AND ?? []), searchGroups[0]];
+        } else if (searchGroups.length > 1) {
+            where.AND = [...(where.AND ?? []), ...searchGroups];
+        }
+
+        return where;
+    }
+
     async autoGenerateOnCompletion(enrollmentId) {
         try {
             const enrollment = await prisma.enrollment.findUnique({
@@ -118,14 +168,15 @@ export class CertificateService {
         if (queryParams.courseId && user?.level !== 'PLATFORM_ADMIN') where.courseId = queryParams.courseId;
         if (queryParams.status) where.status = queryParams.status;
         if (queryParams.archived !== undefined) where.archived = queryParams.archived === 'true';
-
-        if (queryParams.search) {
-            where.OR = [
-                { user: { email: { contains: queryParams.search, mode: 'insensitive' } } },
-                { user: { firstName: { contains: queryParams.search, mode: 'insensitive' } } },
-                { user: { lastName: { contains: queryParams.search, mode: 'insensitive' } } },
-            ];
+        if (queryParams.year) {
+            const year = parseInt(queryParams.year, 10);
+            where.issuedAt = {
+                gte: new Date(`${year}-01-01`),
+                lt: new Date(`${year + 1}-01-01`),
+            };
         }
+
+        this._applyCertificateSearchFilters(where, queryParams);
 
         const orderBy = {
             [queryParams.sortBy || 'issuedAt']: queryParams.sortOrder === 'asc' ? 'asc' : 'desc',
@@ -454,10 +505,23 @@ export class CertificateService {
             throw new Error(`Certificate is ${certificate.status.toLowerCase()} and cannot be downloaded`);
         }
 
-        const hasArchive = await userHasArchiveAccess(certificate.userId);
-        const access = formatCertificateAccess(certificate, hasArchive);
+        const isCompanyAdminForEmployee =
+            requestingUser.level === 'COMPANY_ADMIN'
+            && certificate.userId !== requestingUser.id;
 
-        if (!access.canDownload) {
+        const hasArchive = await userHasArchiveAccess(certificate.userId);
+        let access = formatCertificateAccess(certificate, hasArchive);
+
+        if (isCompanyAdminForEmployee) {
+            access = {
+                ...access,
+                downloadStatus: 'AVAILABLE',
+                canDownload: true,
+                isExpired: false,
+                needsArchivePurchase: false,
+                freeDownloadMessage: 'Company admin download',
+            };
+        } else if (!access.canDownload) {
             throw new Error(
                 'Certificate free download period (30 days) has expired. ' +
                 'Purchase archive storage at GET /api/v1/certificates/archive/plan to download again.'

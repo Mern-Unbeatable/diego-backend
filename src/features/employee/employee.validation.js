@@ -92,3 +92,38 @@ export const employeeQuerySchema = z.object({
     sortBy: z.enum(['createdAt', 'firstName', 'lastName', 'employmentDate']).default('createdAt'),
     sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });
+
+export const assignCoursesToEmployeeSchema = courseAssignmentRefine(
+    z.object({
+        ...courseAssignmentFields,
+    })
+        .refine(
+            (d) => Boolean(d.courseId || d.courseIds?.length || d.companyCoursePurchaseId),
+            { message: 'At least one course assignment field is required (courseId, courseIds, or companyCoursePurchaseId)' },
+        )
+        .transform((data) => resolveCourseIds(data)),
+);
+
+export const employeeEnrollmentQuerySchema = z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'EXPIRED', 'SUSPENDED']).optional(),
+    courseId: z.string().uuid().optional(),
+    userId: z.string().uuid().optional(),
+    search: z.string().max(100).optional(),
+    employeeName: z.string().max(100).optional(),
+    courseName: z.string().max(100).optional(),
+    sortBy: z.enum(['createdAt', 'startedAt', 'completedAt', 'expiresAt']).default('createdAt'),
+    sortOrder: z.enum(['asc', 'desc']).default('desc'),
+});
+
+export const employeeCertificateQuerySchema = z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+    courseId: z.string().uuid().optional(),
+    year: z.coerce.number().int().min(2000).max(2100).optional(),
+    status: z.enum(['PENDING', 'ISSUED', 'ARCHIVED', 'REVOKED']).optional(),
+    search: z.string().max(100).optional(),
+    employeeName: z.string().max(100).optional(),
+    courseName: z.string().max(100).optional(),
+});

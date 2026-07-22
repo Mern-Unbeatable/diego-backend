@@ -55,3 +55,19 @@ export const updateCertificateSchema = z.object({
 export const verifyCertificateSchema = z.object({
     certificateId: z.string().uuid('Invalid certificate ID'),
 });
+
+export const certificateQuerySchema = z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+    userId: z.string().uuid().optional(),
+    courseId: z.string().uuid().optional(),
+    tenantId: z.string().uuid().optional(),
+    status: z.enum(['PENDING', 'ISSUED', 'ARCHIVED', 'REVOKED']).optional(),
+    archived: z.enum(['true', 'false']).optional(),
+    year: z.coerce.number().int().min(2000).max(2100).optional(),
+    search: z.string().max(100).optional(),
+    employeeName: z.string().max(100).optional(),
+    courseName: z.string().max(100).optional(),
+    sortBy: z.enum(['issuedAt', 'createdAt', 'downloadableUntil']).default('issuedAt'),
+    sortOrder: z.enum(['asc', 'desc']).default('desc'),
+});

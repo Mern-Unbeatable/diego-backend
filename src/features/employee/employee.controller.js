@@ -6,6 +6,9 @@ import {
     addEmployeeSchema,
     updateEmployeeSchema,
     employeeQuerySchema,
+    assignCoursesToEmployeeSchema,
+    employeeEnrollmentQuerySchema,
+    employeeCertificateQuerySchema,
 } from './employee.validation.js';
 import { EMPLOYEE_ROLE_SUGGESTIONS } from './employee.constants.js';
 
@@ -78,6 +81,71 @@ class EmployeeController {
         ResponseHandler.success(res, {
             message: 'Employee role suggestions fetched',
             data: { roles: EMPLOYEE_ROLE_SUGGESTIONS },
+        });
+    });
+
+    getCompanyOverview = catchAsync(async (req, res) => {
+        const result = await employeeService.getCompanyOverview(req.user);
+
+        ResponseHandler.success(res, {
+            message: 'Company employee overview fetched successfully',
+            data: result,
+        });
+    });
+
+    getEmployeeEnrollments = catchAsync(async (req, res) => {
+        const { userId } = req.params;
+        const query = employeeEnrollmentQuerySchema.parse(req.query);
+        const result = await employeeService.getEmployeeEnrollments(userId, query, req.user);
+
+        ResponseHandler.success(res, {
+            message: 'Employee enrollments fetched successfully',
+            data: result,
+        });
+    });
+
+    getEmployeeEnrollmentDetail = catchAsync(async (req, res) => {
+        const { userId, enrollmentId } = req.params;
+        const result = await employeeService.getEmployeeEnrollmentDetail(userId, enrollmentId, req.user);
+
+        ResponseHandler.success(res, {
+            message: 'Employee enrollment detail fetched successfully',
+            data: { enrollment: result },
+        });
+    });
+
+    assignCoursesToEmployee = catchAsync(async (req, res) => {
+        const { userId } = req.params;
+        const payload = assignCoursesToEmployeeSchema.parse(req.body);
+        const result = await employeeService.assignCoursesToEmployee(userId, payload, req.user);
+
+        this.log.info(`Courses assigned to employee ${userId} by ${req.user.id}`);
+        ResponseHandler.created(res, {
+            message: result.assignedCoursesCount > 0
+                ? 'Course(s) assigned to employee successfully'
+                : 'No new courses were assigned',
+            data: result,
+        });
+    });
+
+    getEmployeeCertificates = catchAsync(async (req, res) => {
+        const { userId } = req.params;
+        const query = employeeCertificateQuerySchema.parse(req.query);
+        const result = await employeeService.getEmployeeCertificates(userId, query, req.user);
+
+        ResponseHandler.success(res, {
+            message: 'Employee certificates fetched successfully',
+            data: result,
+        });
+    });
+
+    downloadEmployeeCertificate = catchAsync(async (req, res) => {
+        const { userId, certificateId } = req.params;
+        const result = await employeeService.downloadEmployeeCertificate(userId, certificateId, req.user);
+
+        ResponseHandler.success(res, {
+            message: 'Employee certificate download URL generated',
+            data: result,
         });
     });
 

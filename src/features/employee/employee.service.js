@@ -3,6 +3,11 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { emailService } from '../../shared/services/emails/emailService.js';
 import { config } from '../../config/config.js';
+import { certificateService } from '../certificate/certificate.service.js';
+import {
+    formatCertificateAccess,
+    userHasArchiveAccess,
+} from '../certificate/certificate.archive.js';
 
 class EmployeeService {
 
@@ -602,54 +607,22 @@ class EmployeeService {
 
         if (!employee) throw new Error('Employee not found in your company');
 
-        const courseDetails = employee.user.enrollments.map(enrollment => {
-            const totalLessons = enrollment.course.lessons.length;
-            const completedLessons = enrollment.lessonProgress.filter(p => {
-                if (p.scormStatus && ['COMPLETED', 'PASSED'].includes(p.scormStatus)) return true;
-                return p.completed === true;
-            }).length;
-            const totalTime = enrollment.lessonProgress.reduce((s, p) => s + (p.timeSpentSecs ?? 0), 0);
-
-            const quizByType = {};
-            for (const attempt of enrollment.quizAttempts) {
-                const type = attempt.quiz?.quizType ?? 'UNKNOWN';
-                if (!quizByType[type]) quizByType[type] = { attempts: [], bestScore: 0, passed: false };
-                quizByType[type].attempts.push({
-                    scorePercent: attempt.scorePercent,
-                    passed: attempt.passed,
-                    attemptedAt: attempt.attemptedAt,
-                });
-                if (attempt.scorePercent > quizByType[type].bestScore) {
-                    quizByType[type].bestScore = attempt.scorePercent;
-                    quizByType[type].passed = attempt.passed;
-                }
-            }
-
-            return {
-                enrollmentId: enrollment.id,
-                status: enrollment.status,
-                startedAt: enrollment.startedAt,
-                completedAt: enrollment.completedAt,
-                expiresAt: enrollment.expiresAt,
-                course: {
-                    id: enrollment.course.id,
-                    courseTitle: enrollment.course.courseTitle,
-                    slug: enrollment.course.slug,
-                    totalLessons,
-                },
-                progress: {
-                    totalLessons,
-                    completedLessons,
-                    percentage: totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0,
-                    totalTimeSpentSecs: totalTime,
-                },
-                quizzes: { byType: quizByType, totalAttempts: enrollment.quizAttempts.length },
-                certificate: enrollment.certificate ?? null,
-            };
-        });
+        const courseDetails = employee.user.enrollments.map(enrollment => this._buildEnrollmentProgress(enrollment));
+        const summary = this._buildEmployeeSummary(employee.user.enrollments);
 
         return {
-            employee: this._mapEmployeeRecord(employee, employee.user, employee.user.enrollments),
+            employee: {
+                ...this._mapEmployeeRecord(employee, employee.user, employee.user.enrollments),
+                assignedCourses: employee.user.enrollments.map((e) => ({
+                    enrollmentId: e.id,
+                    courseId: e.course.id,
+                    courseTitle: this._formatCourseTitle(e.course.courseTitle),
+                    slug: e.course.slug,
+                    status: e.status,
+                    expiresAt: e.expiresAt,
+                })),
+            },
+            summary,
             courses: courseDetails,
         };
     }
@@ -806,6 +779,544 @@ class EmployeeService {
             passwordUpdated: Boolean(plainPassword),
             emailSent,
         };
+    }
+
+    async _assertEmployeeInCompany(employeeUserId, adminUser) {
+        const companyId = await this._resolveCompanyId(adminUser);
+        const employee = await prisma.employee.findFirst({
+            where: { userId: employeeUserId, companyId },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                        firstName: true,
+                        lastName: true,
+                        contactNumber: true,
+                        birthDate: true,
+                        city: true,
+                        traineeTaxCode: true,
+                        isActive: true,
+                        status: true,
+                        tenantId: true,
+                        createdAt: true,
+                    },
+                },
+                company: { select: { id: true, name: true } },
+            },
+        });
+        if (!employee) throw new Error('Employee not found in your company');
+        return employee;
+    }
+
+    _buildEnrollmentProgress(enrollment) {
+        const lessons = enrollment.course?.lessons ?? [];
+        const totalLessons = lessons.length;
+        const completedLessons = (enrollment.lessonProgress ?? []).filter((p) => {
+            if (p.scormStatus && ['COMPLETED', 'PASSED'].includes(p.scormStatus)) return true;
+            return p.completed === true;
+        }).length;
+        const totalTime = (enrollment.lessonProgress ?? []).reduce((s, p) => s + (p.timeSpentSecs ?? 0), 0);
+
+        const quizByType = {};
+        for (const attempt of enrollment.quizAttempts ?? []) {
+            const type = attempt.quiz?.quizType ?? 'UNKNOWN';
+            if (!quizByType[type]) quizByType[type] = { attempts: [], bestScore: 0, passed: false };
+            quizByType[type].attempts.push({
+                id: attempt.id,
+                scorePercent: attempt.scorePercent,
+                passed: attempt.passed,
+                attemptedAt: attempt.attemptedAt,
+            });
+            if (attempt.scorePercent > quizByType[type].bestScore) {
+                quizByType[type].bestScore = attempt.scorePercent;
+                quizByType[type].passed = attempt.passed;
+            }
+        }
+
+        return {
+            enrollmentId: enrollment.id,
+            status: enrollment.status,
+            startedAt: enrollment.startedAt,
+            completedAt: enrollment.completedAt,
+            expiresAt: enrollment.expiresAt,
+            createdAt: enrollment.createdAt,
+            course: {
+                id: enrollment.course.id,
+                courseTitle: enrollment.course.courseTitle,
+                slug: enrollment.course.slug,
+                thumbnailUrl: enrollment.course.thumbnailUrl ?? null,
+                totalLessons,
+            },
+            progress: {
+                totalLessons,
+                completedLessons,
+                percentage: totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0,
+                totalTimeSpentSecs: totalTime,
+            },
+            quizzes: { byType: quizByType, totalAttempts: (enrollment.quizAttempts ?? []).length },
+            certificate: enrollment.certificate ?? null,
+        };
+    }
+
+    async _formatCertificateForCompanyAdmin(certificate, adminUser) {
+        const hasArchive = await userHasArchiveAccess(certificate.userId);
+        const access = formatCertificateAccess(certificate, hasArchive);
+        const companyCanDownload = certificate.status === 'ISSUED';
+
+        return {
+            id: certificate.id,
+            enrollmentId: certificate.enrollmentId,
+            courseId: certificate.courseId,
+            status: certificate.status,
+            issuedAt: certificate.issuedAt,
+            downloadableUntil: certificate.downloadableUntil,
+            pdfUrl: companyCanDownload ? certificate.pdfUrl : null,
+            qrCode: certificate.qrCode,
+            downloadCount: certificate.downloadCount,
+            lastDownloadedAt: certificate.lastDownloadedAt,
+            course: certificate.course
+                ? {
+                    id: certificate.course.id,
+                    title: this._formatCourseTitle(certificate.course.courseTitle),
+                    slug: certificate.course.slug,
+                }
+                : null,
+            download: {
+                ...access,
+                canDownload: companyCanDownload,
+                downloadStatus: companyCanDownload ? 'AVAILABLE' : access.downloadStatus,
+                companyAdminCanDownload: companyCanDownload,
+            },
+            downloadEndpoint: companyCanDownload
+                ? `/api/v1/employees/${certificate.userId}/certificates/${certificate.id}/download`
+                : null,
+        };
+    }
+
+    _buildEmployeeSummary(enrollments = []) {
+        const totalEnrollments = enrollments.length;
+        const completedCourses = enrollments.filter((e) => e.status === 'COMPLETED').length;
+        const inProgressCourses = enrollments.filter((e) => e.status === 'IN_PROGRESS').length;
+        const notStartedCourses = enrollments.filter((e) => e.status === 'NOT_STARTED').length;
+        const certificatesEarned = enrollments.filter((e) => e.certificate?.status === 'ISSUED').length;
+
+        const progressValues = enrollments.map((e) => {
+            const lessons = e.course?.lessons ?? [];
+            const totalLessons = lessons.length;
+            if (!totalLessons) return 0;
+            const completedLessons = (e.lessonProgress ?? []).filter((p) => {
+                if (p.scormStatus && ['COMPLETED', 'PASSED'].includes(p.scormStatus)) return true;
+                return p.completed === true;
+            }).length;
+            return Math.round((completedLessons / totalLessons) * 100);
+        });
+
+        const averageProgress = totalEnrollments > 0
+            ? Math.round(progressValues.reduce((s, v) => s + v, 0) / totalEnrollments)
+            : 0;
+
+        return {
+            totalEnrollments,
+            completedCourses,
+            inProgressCourses,
+            notStartedCourses,
+            certificatesEarned,
+            averageProgress,
+        };
+    }
+
+    async getCompanyOverview(adminUser) {
+        const companyId = await this._resolveCompanyId(adminUser);
+        const now = new Date();
+        const expiringSoonDate = new Date(now);
+        expiringSoonDate.setDate(expiringSoonDate.getDate() + 14);
+
+        const employeeUserIds = await prisma.user.findMany({
+            where: { companyId, level: 'COMPANY_EMPLOYEE' },
+            select: { id: true, status: true, isActive: true },
+        });
+
+        const userIds = employeeUserIds.map((u) => u.id);
+
+        const [
+            totalEmployees,
+            activeEmployees,
+            suspendedEmployees,
+            enrollmentStatusBreakdown,
+            totalCertificates,
+            expiringSoon,
+            recentCompletions,
+            purchaseSeats,
+        ] = await Promise.all([
+            prisma.employee.count({ where: { companyId } }),
+            prisma.user.count({ where: { companyId, level: 'COMPANY_EMPLOYEE', status: 'ACTIVE', isActive: true } }),
+            prisma.user.count({ where: { companyId, level: 'COMPANY_EMPLOYEE', status: 'SUSPENDED' } }),
+            userIds.length
+                ? prisma.enrollment.groupBy({
+                    by: ['status'],
+                    where: { userId: { in: userIds } },
+                    _count: { _all: true },
+                })
+                : Promise.resolve([]),
+            userIds.length
+                ? prisma.certificate.count({ where: { userId: { in: userIds }, status: 'ISSUED' } })
+                : Promise.resolve(0),
+            userIds.length
+                ? prisma.enrollment.count({
+                    where: {
+                        userId: { in: userIds },
+                        status: { in: ['NOT_STARTED', 'IN_PROGRESS'] },
+                        expiresAt: { gte: now, lte: expiringSoonDate },
+                    },
+                })
+                : Promise.resolve(0),
+            userIds.length
+                ? prisma.enrollment.findMany({
+                    where: { userId: { in: userIds }, status: 'COMPLETED' },
+                    orderBy: { completedAt: 'desc' },
+                    take: 5,
+                    include: {
+                        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+                        course: { select: { id: true, courseTitle: true, slug: true } },
+                    },
+                })
+                : Promise.resolve([]),
+            prisma.companyCoursePurchase.findMany({
+                where: { companyId, expiresAt: { gt: now } },
+                select: { seatsTotal: true, seatsUsed: true },
+            }),
+        ]);
+
+        const seatsAvailable = purchaseSeats.reduce((sum, p) => sum + (p.seatsTotal - p.seatsUsed), 0);
+        const seatsTotal = purchaseSeats.reduce((sum, p) => sum + p.seatsTotal, 0);
+        const seatsUsed = purchaseSeats.reduce((sum, p) => sum + p.seatsUsed, 0);
+
+        return {
+            companyId,
+            stats: {
+                totalEmployees,
+                activeEmployees,
+                suspendedEmployees,
+                totalEnrollments: enrollmentStatusBreakdown.reduce((s, r) => s + r._count._all, 0),
+                totalCertificates,
+                expiringSoonEnrollments: expiringSoon,
+                seatsTotal,
+                seatsUsed,
+                seatsAvailable,
+                enrollmentStatusBreakdown: enrollmentStatusBreakdown.reduce((acc, row) => {
+                    acc[row.status] = row._count._all;
+                    return acc;
+                }, {}),
+            },
+            recentCompletions: recentCompletions.map((e) => ({
+                enrollmentId: e.id,
+                completedAt: e.completedAt,
+                employee: {
+                    userId: e.user.id,
+                    name: `${e.user.firstName || ''} ${e.user.lastName || ''}`.trim() || e.user.email,
+                    email: e.user.email,
+                },
+                course: {
+                    id: e.course.id,
+                    title: this._formatCourseTitle(e.course.courseTitle),
+                    slug: e.course.slug,
+                },
+            })),
+        };
+    }
+
+    async getEmployeeEnrollments(employeeUserId, queryParams = {}, adminUser) {
+        await this._assertEmployeeInCompany(employeeUserId, adminUser);
+
+        const page = parseInt(queryParams.page) || 1;
+        const limit = Math.min(parseInt(queryParams.limit) || 20, 100);
+        const skip = (page - 1) * limit;
+
+        const where = { userId: employeeUserId };
+        if (queryParams.status) where.status = queryParams.status;
+        if (queryParams.courseId) where.courseId = queryParams.courseId;
+
+        const orderBy = {
+            [queryParams.sortBy || 'createdAt']: queryParams.sortOrder === 'asc' ? 'asc' : 'desc',
+        };
+
+        const [enrollments, total] = await Promise.all([
+            prisma.enrollment.findMany({
+                where,
+                orderBy,
+                skip,
+                take: limit,
+                include: {
+                    course: {
+                        include: {
+                            lessons: {
+                                orderBy: { orderIndex: 'asc' },
+                                select: {
+                                    id: true,
+                                    title: true,
+                                    orderIndex: true,
+                                    contentType: true,
+                                    isRequired: true,
+                                },
+                            },
+                        },
+                    },
+                    lessonProgress: {
+                        select: {
+                            lessonId: true,
+                            completed: true,
+                            scormStatus: true,
+                            timeSpentSecs: true,
+                            completedAt: true,
+                        },
+                    },
+                    quizAttempts: {
+                        orderBy: { attemptedAt: 'desc' },
+                        include: {
+                            quiz: {
+                                select: { id: true, quizTitle: true, quizType: true, passScorePercent: true },
+                            },
+                        },
+                    },
+                    certificate: {
+                        select: {
+                            id: true,
+                            status: true,
+                            issuedAt: true,
+                            pdfUrl: true,
+                            qrCode: true,
+                            downloadableUntil: true,
+                        },
+                    },
+                },
+            }),
+            prisma.enrollment.count({ where }),
+        ]);
+
+        return {
+            meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+            enrollments: enrollments.map((e) => this._buildEnrollmentProgress(e)),
+        };
+    }
+
+    async getEmployeeEnrollmentDetail(employeeUserId, enrollmentId, adminUser) {
+        await this._assertEmployeeInCompany(employeeUserId, adminUser);
+
+        const enrollment = await prisma.enrollment.findFirst({
+            where: { id: enrollmentId, userId: employeeUserId },
+            include: {
+                course: {
+                    include: {
+                        lessons: {
+                            orderBy: { orderIndex: 'asc' },
+                            select: {
+                                id: true,
+                                title: true,
+                                orderIndex: true,
+                                contentType: true,
+                                isRequired: true,
+                                durationSecs: true,
+                            },
+                        },
+                    },
+                },
+                lessonProgress: {
+                    include: {
+                        lesson: { select: { id: true, title: true, orderIndex: true, contentType: true } },
+                    },
+                },
+                quizAttempts: {
+                    orderBy: { attemptedAt: 'desc' },
+                    include: {
+                        quiz: {
+                            select: { id: true, quizTitle: true, quizType: true, passScorePercent: true },
+                        },
+                    },
+                },
+                certificate: {
+                    select: {
+                        id: true,
+                        status: true,
+                        issuedAt: true,
+                        pdfUrl: true,
+                        qrCode: true,
+                        downloadableUntil: true,
+                    },
+                },
+            },
+        });
+
+        if (!enrollment) throw new Error('Enrollment not found for this employee');
+
+        const base = this._buildEnrollmentProgress(enrollment);
+        const progressMap = new Map((enrollment.lessonProgress ?? []).map((p) => [p.lessonId, p]));
+
+        return {
+            ...base,
+            lessons: (enrollment.course.lessons ?? []).map((lesson) => {
+                const p = progressMap.get(lesson.id);
+                const isScorm = ['SCORM', 'SCORM_12'].includes(lesson.contentType);
+                const isCompleted = isScorm
+                    ? ['COMPLETED', 'PASSED'].includes(p?.scormStatus)
+                    : (p?.completed ?? false);
+
+                return {
+                    id: lesson.id,
+                    title: this._formatCourseTitle(lesson.title),
+                    orderIndex: lesson.orderIndex,
+                    contentType: lesson.contentType,
+                    isRequired: lesson.isRequired,
+                    durationSecs: lesson.durationSecs,
+                    isCompleted,
+                    scormStatus: isScorm ? (p?.scormStatus ?? 'NOT_ATTEMPTED') : null,
+                    timeSpentSecs: p?.timeSpentSecs ?? 0,
+                    completedAt: p?.completedAt ?? null,
+                };
+            }),
+        };
+    }
+
+    async assignCoursesToEmployee(employeeUserId, data, adminUser) {
+        const employee = await this._assertEmployeeInCompany(employeeUserId, adminUser);
+        const companyId = employee.companyId;
+
+        const result = await prisma.$transaction(async (tx) => {
+            const newEnrollments = await this._assignCoursesToUser(tx, {
+                userId: employee.userId,
+                companyId,
+                courseIds: data.courseIds ?? [],
+                companyCoursePurchaseId: data.companyCoursePurchaseId ?? null,
+                tenantId: employee.user.tenantId,
+            });
+
+            const updatedEmployee = await tx.employee.findUnique({
+                where: { id: employee.id },
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            email: true,
+                            firstName: true,
+                            lastName: true,
+                            contactNumber: true,
+                            birthDate: true,
+                            city: true,
+                            traineeTaxCode: true,
+                            isActive: true,
+                            status: true,
+                            enrollments: {
+                                select: {
+                                    id: true,
+                                    status: true,
+                                    course: {
+                                        select: { id: true, courseTitle: true, slug: true },
+                                    },
+                                },
+                                orderBy: { createdAt: 'desc' },
+                            },
+                        },
+                    },
+                },
+            });
+
+            return { updatedEmployee, newEnrollments };
+        });
+
+        let emailSent = false;
+        try {
+            if (result.newEnrollments?.length > 0) {
+                const baseClientUrl = (config.CLIENT_URL || '').replace(/\/$/, '');
+                const accessCourses = result.newEnrollments
+                    .filter((e) => e.accessLinkToken && baseClientUrl)
+                    .map((e) => ({
+                        title: this._formatCourseTitle(e.course.courseTitle),
+                        accessUrl: `${baseClientUrl}/enrollments/access/${e.accessLinkToken}`,
+                        expiresAt: e.accessLinkExpiresAt,
+                    }));
+
+                await emailService.sendEmployeeUpdatedEmail({
+                    to: employee.user.email,
+                    firstName: result.updatedEmployee.user.firstName,
+                    lastName: result.updatedEmployee.user.lastName,
+                    companyName: employee.company.name,
+                    password: null,
+                    courses: result.newEnrollments.map((e) => ({
+                        title: this._formatCourseTitle(e.course.courseTitle),
+                        slug: e.course.slug,
+                    })),
+                    accessCourses,
+                });
+                emailSent = true;
+            }
+        } catch (_emailErr) {
+            emailSent = false;
+        }
+
+        return {
+            employee: this._mapEmployeeRecord(
+                result.updatedEmployee,
+                result.updatedEmployee.user,
+                result.updatedEmployee.user.enrollments,
+            ),
+            newEnrollments: result.newEnrollments,
+            assignedCoursesCount: result.newEnrollments.length,
+            emailSent,
+        };
+    }
+
+    async getEmployeeCertificates(employeeUserId, queryParams = {}, adminUser) {
+        await this._assertEmployeeInCompany(employeeUserId, adminUser);
+
+        const page = parseInt(queryParams.page) || 1;
+        const limit = Math.min(parseInt(queryParams.limit) || 20, 50);
+        const skip = (page - 1) * limit;
+
+        const where = { userId: employeeUserId };
+        if (queryParams.courseId) where.courseId = queryParams.courseId;
+        if (queryParams.status) where.status = queryParams.status;
+        if (queryParams.year) {
+            const year = parseInt(queryParams.year, 10);
+            where.issuedAt = {
+                gte: new Date(`${year}-01-01`),
+                lt: new Date(`${year + 1}-01-01`),
+            };
+        }
+
+        const [certificates, total] = await Promise.all([
+            prisma.certificate.findMany({
+                where,
+                orderBy: { issuedAt: 'desc' },
+                skip,
+                take: limit,
+                include: {
+                    course: { select: { id: true, courseTitle: true, slug: true } },
+                    enrollment: { select: { id: true, status: true, completedAt: true } },
+                },
+            }),
+            prisma.certificate.count({ where }),
+        ]);
+
+        const formatted = await Promise.all(
+            certificates.map((cert) => this._formatCertificateForCompanyAdmin(cert, adminUser)),
+        );
+
+        return {
+            meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+            certificates: formatted,
+        };
+    }
+
+    async downloadEmployeeCertificate(employeeUserId, certificateId, adminUser) {
+        await this._assertEmployeeInCompany(employeeUserId, adminUser);
+
+        const certificate = await prisma.certificate.findFirst({
+            where: { id: certificateId, userId: employeeUserId },
+            select: { id: true },
+        });
+        if (!certificate) throw new Error('Certificate not found for this employee');
+
+        return certificateService.downloadCertificate(certificateId, adminUser);
     }
 
     async removeEmployee(employeeUserId, adminUser) {
