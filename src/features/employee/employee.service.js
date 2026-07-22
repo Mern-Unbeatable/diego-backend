@@ -94,6 +94,84 @@ class EmployeeService {
         return dbUser.companyId;
     }
 
+    _buildEnrollmentUserSearchConditions(term) {
+        if (!term?.trim()) return [];
+        const search = term.trim();
+        return [
+            { user: { email: { contains: search, mode: 'insensitive' } } },
+            { user: { firstName: { contains: search, mode: 'insensitive' } } },
+            { user: { lastName: { contains: search, mode: 'insensitive' } } },
+        ];
+    }
+
+    _buildEnrollmentCourseSearchConditions(term) {
+        if (!term?.trim()) return [];
+        const search = term.trim();
+        return [
+            { course: { courseTitle: { path: ['it'], string_contains: search } } },
+            { course: { courseTitle: { path: ['en'], string_contains: search } } },
+            { course: { courseTitle: { path: ['fr'], string_contains: search } } },
+            { course: { courseTitle: { path: ['zh'], string_contains: search } } },
+            { course: { slug: { contains: search, mode: 'insensitive' } } },
+        ];
+    }
+
+    _applyEnrollmentSearchFilters(where, queryParams = {}) {
+        const searchGroups = [];
+
+        if (queryParams.search?.trim()) {
+            searchGroups.push({
+                OR: [
+                    ...this._buildEnrollmentUserSearchConditions(queryParams.search),
+                    ...this._buildEnrollmentCourseSearchConditions(queryParams.search),
+                ],
+            });
+        } else {
+            if (queryParams.employeeName?.trim()) {
+                searchGroups.push({ OR: this._buildEnrollmentUserSearchConditions(queryParams.employeeName) });
+            }
+            if (queryParams.courseName?.trim()) {
+                searchGroups.push({ OR: this._buildEnrollmentCourseSearchConditions(queryParams.courseName) });
+            }
+        }
+
+        if (searchGroups.length === 1) {
+            where.AND = [...(where.AND ?? []), searchGroups[0]];
+        } else if (searchGroups.length > 1) {
+            where.AND = [...(where.AND ?? []), ...searchGroups];
+        }
+
+        return where;
+    }
+
+    _buildCertificateUserSearchConditions(term) {
+        return this._buildEnrollmentUserSearchConditions(term);
+    }
+
+    _buildCertificateCourseSearchConditions(term) {
+        return this._buildEnrollmentCourseSearchConditions(term);
+    }
+
+    _applyEmployeeCertificateSearchFilters(where, queryParams = {}) {
+        const searchGroups = [];
+
+        if (queryParams.search?.trim()) {
+            searchGroups.push({
+                OR: [
+                    ...this._buildCertificateCourseSearchConditions(queryParams.search),
+                ],
+            });
+        } else if (queryParams.courseName?.trim()) {
+            searchGroups.push({ OR: this._buildCertificateCourseSearchConditions(queryParams.courseName) });
+        }
+
+        if (searchGroups.length > 0) {
+            where.AND = [...(where.AND ?? []), ...searchGroups];
+        }
+
+        return where;
+    }
+
     _formatCourseTitle(courseTitle) {
         if (!courseTitle) return 'Course';
         if (typeof courseTitle === 'string') return courseTitle;
@@ -1026,6 +1104,224 @@ class EmployeeService {
         };
     }
 
+    _mapProgressState(status) {
+        if (status === 'COMPLETED') return 'completed';
+        if (status === 'IN_PROGRESS') return 'in progress';
+        return 'not started';
+    }
+
+    _resolveLastAccess(enrollment, lessonProgress = []) {
+        const dates = [
+            enrollment.updatedAt,
+            enrollment.startedAt,
+            ...lessonProgress.map((p) => p.completedAt || p.startedAt),
+        ].filter(Boolean).map((d) => new Date(d).getTime());
+
+        return dates.length ? new Date(Math.max(...dates)).toISOString() : null;
+    }
+
+    _computeProgressPercent(totalLessons, lessonProgress = []) {
+        if (!totalLessons) return 0;
+        const completed = lessonProgress.filter((p) => {
+            if (p.scormStatus && ['COMPLETED', 'PASSED'].includes(p.scormStatus)) return true;
+            return p.completed === true;
+        }).length;
+        return Math.round((completed / totalLessons) * 100);
+    }
+
+    async getProgressReport(queryParams = {}, adminUser) {
+        const companyId = await this._resolveCompanyId(adminUser);
+
+        const page = parseInt(queryParams.page) || 1;
+        const limit = Math.min(parseInt(queryParams.limit) || 20, 100);
+        const skip = (page - 1) * limit;
+
+        const where = {
+            companyContextId: companyId,
+            user: { companyId, level: 'COMPANY_EMPLOYEE' },
+        };
+
+        if (queryParams.status) where.status = queryParams.status;
+        if (queryParams.courseId) where.courseId = queryParams.courseId;
+        if (queryParams.userId) where.userId = queryParams.userId;
+
+        this._applyEnrollmentSearchFilters(where, queryParams);
+
+        const orderBy = {
+            [queryParams.sortBy || 'updatedAt']: queryParams.sortOrder === 'asc' ? 'asc' : 'desc',
+        };
+
+        const [enrollments, total] = await Promise.all([
+            prisma.enrollment.findMany({
+                where,
+                orderBy,
+                skip,
+                take: limit,
+                include: {
+                    user: { select: { id: true, firstName: true, lastName: true, email: true } },
+                    course: {
+                        select: {
+                            id: true,
+                            courseTitle: true,
+                            _count: { select: { lessons: true } },
+                        },
+                    },
+                    lessonProgress: {
+                        select: {
+                            completed: true,
+                            scormStatus: true,
+                            startedAt: true,
+                            completedAt: true,
+                        },
+                    },
+                    certificate: { select: { id: true, status: true } },
+                },
+            }),
+            prisma.enrollment.count({ where }),
+        ]);
+
+        const report = enrollments.map((e) => {
+            const totalLessons = e.course._count.lessons;
+            const progress = this._computeProgressPercent(totalLessons, e.lessonProgress);
+            const hasCertificate = e.certificate?.status === 'ISSUED';
+
+            return {
+                enrollmentId: e.id,
+                courseId: e.course.id,
+                courseTitle: this._formatCourseTitle(e.course.courseTitle),
+                employeeUserId: e.user.id,
+                employeeName: `${e.user.firstName || ''} ${e.user.lastName || ''}`.trim() || e.user.email,
+                state: this._mapProgressState(e.status),
+                progress,
+                lastAccess: this._resolveLastAccess(e, e.lessonProgress),
+                certificateId: hasCertificate ? e.certificate.id : null,
+                canDownload: hasCertificate,
+                canSendReminder: ['NOT_STARTED', 'IN_PROGRESS'].includes(e.status),
+            };
+        });
+
+        return {
+            meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+            report,
+        };
+    }
+
+    async getCompanyEnrollments(queryParams = {}, adminUser) {
+        const companyId = await this._resolveCompanyId(adminUser);
+
+        const page = parseInt(queryParams.page) || 1;
+        const limit = Math.min(parseInt(queryParams.limit) || 20, 100);
+        const skip = (page - 1) * limit;
+
+        const where = {
+            companyContextId: companyId,
+            user: {
+                companyId,
+                level: 'COMPANY_EMPLOYEE',
+            },
+        };
+
+        if (queryParams.status) where.status = queryParams.status;
+        if (queryParams.courseId) where.courseId = queryParams.courseId;
+        if (queryParams.userId) where.userId = queryParams.userId;
+
+        this._applyEnrollmentSearchFilters(where, queryParams);
+
+        const orderBy = {
+            [queryParams.sortBy || 'createdAt']: queryParams.sortOrder === 'asc' ? 'asc' : 'desc',
+        };
+
+        const enrollmentInclude = {
+            user: {
+                select: {
+                    id: true,
+                    email: true,
+                    firstName: true,
+                    lastName: true,
+                    contactNumber: true,
+                    status: true,
+                    isActive: true,
+                },
+            },
+            course: {
+                include: {
+                    lessons: {
+                        orderBy: { orderIndex: 'asc' },
+                        select: {
+                            id: true,
+                            title: true,
+                            orderIndex: true,
+                            contentType: true,
+                            isRequired: true,
+                        },
+                    },
+                },
+            },
+            lessonProgress: {
+                select: {
+                    lessonId: true,
+                    completed: true,
+                    scormStatus: true,
+                    timeSpentSecs: true,
+                    completedAt: true,
+                },
+            },
+            quizAttempts: {
+                orderBy: { attemptedAt: 'desc' },
+                include: {
+                    quiz: {
+                        select: { id: true, quizTitle: true, quizType: true, passScorePercent: true },
+                    },
+                },
+            },
+            certificate: {
+                select: {
+                    id: true,
+                    status: true,
+                    issuedAt: true,
+                    pdfUrl: true,
+                    qrCode: true,
+                    downloadableUntil: true,
+                },
+            },
+        };
+
+        const [enrollments, total] = await Promise.all([
+            prisma.enrollment.findMany({
+                where,
+                orderBy,
+                skip,
+                take: limit,
+                include: enrollmentInclude,
+            }),
+            prisma.enrollment.count({ where }),
+        ]);
+
+        return {
+            meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+            appliedFilters: {
+                search: queryParams.search ?? null,
+                employeeName: queryParams.employeeName ?? null,
+                courseName: queryParams.courseName ?? null,
+                status: queryParams.status ?? null,
+                courseId: queryParams.courseId ?? null,
+                userId: queryParams.userId ?? null,
+            },
+            enrollments: enrollments.map((enrollment) => ({
+                ...this._buildEnrollmentProgress(enrollment),
+                employee: {
+                    userId: enrollment.user.id,
+                    email: enrollment.user.email,
+                    firstName: enrollment.user.firstName,
+                    lastName: enrollment.user.lastName,
+                    fullName: `${enrollment.user.firstName || ''} ${enrollment.user.lastName || ''}`.trim() || enrollment.user.email,
+                    status: enrollment.user.status,
+                    isActive: enrollment.user.isActive,
+                },
+            })),
+        };
+    }
+
     async getEmployeeEnrollments(employeeUserId, queryParams = {}, adminUser) {
         await this._assertEmployeeInCompany(employeeUserId, adminUser);
 
@@ -1036,6 +1332,8 @@ class EmployeeService {
         const where = { userId: employeeUserId };
         if (queryParams.status) where.status = queryParams.status;
         if (queryParams.courseId) where.courseId = queryParams.courseId;
+
+        this._applyEnrollmentSearchFilters(where, queryParams);
 
         const orderBy = {
             [queryParams.sortBy || 'createdAt']: queryParams.sortOrder === 'asc' ? 'asc' : 'desc',
@@ -1096,6 +1394,13 @@ class EmployeeService {
 
         return {
             meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+            appliedFilters: {
+                search: queryParams.search ?? null,
+                employeeName: queryParams.employeeName ?? null,
+                courseName: queryParams.courseName ?? null,
+                status: queryParams.status ?? null,
+                courseId: queryParams.courseId ?? null,
+            },
             enrollments: enrollments.map((e) => this._buildEnrollmentProgress(e)),
         };
     }
@@ -1283,6 +1588,8 @@ class EmployeeService {
             };
         }
 
+        this._applyEmployeeCertificateSearchFilters(where, queryParams);
+
         const [certificates, total] = await Promise.all([
             prisma.certificate.findMany({
                 where,
@@ -1303,7 +1610,113 @@ class EmployeeService {
 
         return {
             meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+            appliedFilters: {
+                search: queryParams.search ?? null,
+                courseName: queryParams.courseName ?? null,
+                courseId: queryParams.courseId ?? null,
+                status: queryParams.status ?? null,
+                year: queryParams.year ?? null,
+            },
             certificates: formatted,
+        };
+    }
+
+    async getCompanyCertificates(queryParams = {}, adminUser) {
+        const companyId = await this._resolveCompanyId(adminUser);
+
+        const page = parseInt(queryParams.page) || 1;
+        const limit = Math.min(parseInt(queryParams.limit) || 20, 50);
+        const skip = (page - 1) * limit;
+
+        const where = {
+            user: {
+                companyId,
+                level: 'COMPANY_EMPLOYEE',
+            },
+        };
+
+        if (queryParams.userId) where.userId = queryParams.userId;
+        if (queryParams.courseId) where.courseId = queryParams.courseId;
+        if (queryParams.status) where.status = queryParams.status;
+        if (queryParams.year) {
+            const year = parseInt(queryParams.year, 10);
+            where.issuedAt = {
+                gte: new Date(`${year}-01-01`),
+                lt: new Date(`${year + 1}-01-01`),
+            };
+        }
+
+        if (queryParams.search?.trim()) {
+            where.AND = [
+                ...(where.AND ?? []),
+                {
+                    OR: [
+                        ...this._buildCertificateUserSearchConditions(queryParams.search),
+                        ...this._buildCertificateCourseSearchConditions(queryParams.search),
+                    ],
+                },
+            ];
+        } else {
+            const searchGroups = [];
+            if (queryParams.employeeName?.trim()) {
+                searchGroups.push({ OR: this._buildCertificateUserSearchConditions(queryParams.employeeName) });
+            }
+            if (queryParams.courseName?.trim()) {
+                searchGroups.push({ OR: this._buildCertificateCourseSearchConditions(queryParams.courseName) });
+            }
+            if (searchGroups.length > 0) {
+                where.AND = [...(where.AND ?? []), ...searchGroups];
+            }
+        }
+
+        const [certificates, total] = await Promise.all([
+            prisma.certificate.findMany({
+                where,
+                orderBy: { issuedAt: 'desc' },
+                skip,
+                take: limit,
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            email: true,
+                            firstName: true,
+                            lastName: true,
+                        },
+                    },
+                    course: { select: { id: true, courseTitle: true, slug: true } },
+                    enrollment: { select: { id: true, status: true, completedAt: true } },
+                },
+            }),
+            prisma.certificate.count({ where }),
+        ]);
+
+        const formatted = await Promise.all(
+            certificates.map((cert) => this._formatCertificateForCompanyAdmin(cert, adminUser)),
+        );
+
+        return {
+            meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+            appliedFilters: {
+                search: queryParams.search ?? null,
+                employeeName: queryParams.employeeName ?? null,
+                courseName: queryParams.courseName ?? null,
+                userId: queryParams.userId ?? null,
+                courseId: queryParams.courseId ?? null,
+                status: queryParams.status ?? null,
+                year: queryParams.year ?? null,
+            },
+            certificates: formatted.map((cert, index) => ({
+                ...cert,
+                employee: {
+                    userId: certificates[index].user.id,
+                    email: certificates[index].user.email,
+                    firstName: certificates[index].user.firstName,
+                    lastName: certificates[index].user.lastName,
+                    fullName: `${certificates[index].user.firstName || ''} ${certificates[index].user.lastName || ''}`.trim()
+                        || certificates[index].user.email,
+                },
+            })),
         };
     }
 

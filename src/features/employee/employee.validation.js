@@ -113,7 +113,7 @@ export const employeeEnrollmentQuerySchema = z.object({
     search: z.string().max(100).optional(),
     employeeName: z.string().max(100).optional(),
     courseName: z.string().max(100).optional(),
-    sortBy: z.enum(['createdAt', 'startedAt', 'completedAt', 'expiresAt']).default('createdAt'),
+    sortBy: z.enum(['createdAt', 'startedAt', 'completedAt', 'expiresAt', 'updatedAt']).default('updatedAt'),
     sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });
 

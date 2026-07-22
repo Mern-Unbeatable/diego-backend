@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { prisma } from '../../config/db.js';
-import { localizeObject } from '../../shared/services/translate/translate.service.js';
+import { t } from '../../shared/services/translate/translate.service.js';
 import { Logger } from '../../config/logger.js';
 import { config } from '../../config/config.js';
 import { notificationService } from '../notification/notification.service.js';
@@ -59,11 +59,25 @@ export class CertificateService {
     _buildUserNameSearchConditions(term) {
         if (!term?.trim()) return [];
         const search = term.trim();
-        return [
+        const conditions = [
             { user: { email: { contains: search, mode: 'insensitive' } } },
             { user: { firstName: { contains: search, mode: 'insensitive' } } },
             { user: { lastName: { contains: search, mode: 'insensitive' } } },
         ];
+
+        const parts = search.split(/\s+/).filter(Boolean);
+        if (parts.length >= 2) {
+            conditions.push({
+                user: {
+                    AND: [
+                        { firstName: { contains: parts[0], mode: 'insensitive' } },
+                        { lastName: { contains: parts.slice(1).join(' '), mode: 'insensitive' } },
+                    ],
+                },
+            });
+        }
+
+        return conditions;
     }
 
     _buildCourseTitleSearchConditions(term) {
@@ -208,6 +222,15 @@ export class CertificateService {
 
         return {
             meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+            appliedFilters: {
+                search: queryParams.search ?? null,
+                employeeName: queryParams.employeeName ?? null,
+                courseName: queryParams.courseName ?? null,
+                userId: queryParams.userId ?? null,
+                courseId: queryParams.courseId ?? null,
+                status: queryParams.status ?? null,
+                year: queryParams.year ?? null,
+            },
             certificates: certificates.map(cert => this._formatCertificate(cert, locale)),
         };
     }
@@ -225,6 +248,14 @@ export class CertificateService {
                 gte: new Date(`${year}-01-01`),
                 lt: new Date(`${year + 1}-01-01`),
             };
+        }
+
+        if (queryParams.search?.trim() || queryParams.courseName?.trim()) {
+            const courseTerm = queryParams.courseName?.trim() || queryParams.search?.trim();
+            where.AND = [
+                ...(where.AND ?? []),
+                { OR: this._buildCourseTitleSearchConditions(courseTerm) },
+            ];
         }
 
         const orderBy = {
@@ -260,6 +291,12 @@ export class CertificateService {
                 plan: getArchivePlan(),
                 freeDownloadDays: CERTIFICATE_FREE_DOWNLOAD_DAYS,
             },
+            appliedFilters: {
+                search: queryParams.search ?? null,
+                courseName: queryParams.courseName ?? null,
+                courseId: queryParams.courseId ?? null,
+                year: queryParams.year ?? null,
+            },
             certificates: certificates.map(cert => {
                 const access = formatCertificateAccess(cert, hasArchiveAccess);
                 return {
@@ -276,7 +313,8 @@ export class CertificateService {
                     ...access,
                     course: {
                         id: cert.course.id,
-                        title: localizeObject(cert.course.courseTitle, locale),
+                        title: this._resolveTitle(cert.course.courseTitle, locale),
+                        courseTitle: this._resolveTitle(cert.course.courseTitle, locale),
                         slug: cert.course.slug,
                         thumbnailUrl: cert.course.thumbnailUrl,
                     },
@@ -349,13 +387,16 @@ export class CertificateService {
             user: {
                 id: certificate.user.id,
                 name: `${certificate.user.firstName || ''} ${certificate.user.lastName || ''}`.trim(),
+                firstName: certificate.user.firstName,
+                lastName: certificate.user.lastName,
                 email: certificate.user.email,
             },
             course: {
                 id: certificate.course.id,
-                title: localizeObject(certificate.course.courseTitle, locale),
+                title: this._resolveTitle(certificate.course.courseTitle, locale),
+                courseTitle: this._resolveTitle(certificate.course.courseTitle, locale),
                 slug: certificate.course.slug,
-                description: localizeObject(certificate.course.description, locale),
+                description: t(certificate.course.description, locale) || null,
             },
             enrollment: certificate.enrollment
                 ? {
@@ -751,12 +792,15 @@ export class CertificateService {
             user: {
                 id: cert.user.id,
                 name: `${cert.user.firstName || ''} ${cert.user.lastName || ''}`.trim(),
+                firstName: cert.user.firstName,
+                lastName: cert.user.lastName,
                 email: cert.user.email,
                 level: cert.user.level,
             },
             course: {
                 id: cert.course.id,
-                title: localizeObject(cert.course.courseTitle, locale),
+                title: this._resolveTitle(cert.course.courseTitle, locale),
+                courseTitle: this._resolveTitle(cert.course.courseTitle, locale),
                 slug: cert.course.slug,
             },
             enrollment: cert.enrollment

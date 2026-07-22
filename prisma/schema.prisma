@@ -348,10 +348,10 @@ model CoursePackage {
   id   String            @id @default(uuid())
   type CoursePackageType
 
-  key         String? // optional internal slug, e.g. "default-company-package"
-  title       Json // i18n: { en, it, fr, zh }
-  description Json? // i18n, mainly used by COMPANY type
-  features    Json? // array: i18n strings (SINGLE_USER) or {type, label, price, currency, minUsers, maxUsers} (COMPANY)
+  key         String?
+  title       Json
+  description Json?
+  features    Json?
 
   isActive  Boolean @default(true)
   isDefault Boolean @default(false)

@@ -7,6 +7,7 @@ import {
     generateCertificateSchema,
     updateCertificateSchema,
     verifyCertificateSchema,
+    certificateQuerySchema,
 } from './certificate.validation.js';
 
 class CertificateController {
@@ -15,10 +16,11 @@ class CertificateController {
     }
 
     getMyCertificates = catchAsync(async (req, res) => {
+        const query = certificateQuerySchema.parse(req.query);
 
         const result = await certificateService.getMyCertificates(
             req.user.id,
-            req.query,
+            query,
             req.locale
         );
 
@@ -37,9 +39,10 @@ class CertificateController {
     });
 
     getAllCertificates = catchAsync(async (req, res) => {
+        const query = certificateQuerySchema.parse(req.query);
 
         const result = await certificateService.getAllCertificates(
-            req.query,
+            query,
             req.locale,
             req.user
         );

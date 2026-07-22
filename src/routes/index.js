@@ -27,6 +27,7 @@ import { coursePackageRoutes } from '../features/coursePackage/coursePackage.rou
 import { courseFavoriteRoutes } from '../features/courseFavorite/courseFavorite.route.js';
 import { packageRoutes } from '../features/package/package.route.js';
 import { platformSettingRoutes } from '../features/platformSetting/platformSetting.route.js';
+import { companyDashboardRoutes } from '../features/dashboard/companyDashboard.route.js';
 
 const BASE_PATH = '/api/v1';
 
@@ -60,4 +61,5 @@ export default (app) => {
   app.use(`${BASE_PATH}/favorite-courses`, courseFavoriteRoutes);
   app.use(`${BASE_PATH}/packages`, packageRoutes);
   app.use(`${BASE_PATH}/platform-settings`, platformSettingRoutes);
+  app.use(`${BASE_PATH}/dashboard`, companyDashboardRoutes);
 };

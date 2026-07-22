@@ -12,6 +12,9 @@ const companyAdminGuard = authMiddleware.authorize('COMPANY_ADMIN');
 
 router.post('/', companyAdminGuard, employeeController.addEmployee);
 router.get('/overview', companyAdminGuard, employeeController.getCompanyOverview);
+router.get('/progress-report', companyAdminGuard, employeeController.getProgressReport);
+router.get('/enrollments', companyAdminGuard, employeeController.getCompanyEnrollments);
+router.get('/certificates', companyAdminGuard, employeeController.getCompanyCertificates);
 router.get('/assignable-courses', companyAdminGuard, employeeController.getAssignableCourses);
 router.get('/role-suggestions', companyAdminGuard, employeeController.getRoleSuggestions);
 router.get('/', companyAdminGuard, employeeController.getCompanyEmployees);

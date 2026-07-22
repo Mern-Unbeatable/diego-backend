@@ -93,6 +93,36 @@ class EmployeeController {
         });
     });
 
+    getCompanyEnrollments = catchAsync(async (req, res) => {
+        const query = employeeEnrollmentQuerySchema.parse(req.query);
+        const result = await employeeService.getCompanyEnrollments(query, req.user);
+
+        ResponseHandler.success(res, {
+            message: 'Company employee enrollments fetched successfully',
+            data: result,
+        });
+    });
+
+    getProgressReport = catchAsync(async (req, res) => {
+        const query = employeeEnrollmentQuerySchema.parse(req.query);
+        const result = await employeeService.getProgressReport(query, req.user);
+
+        ResponseHandler.success(res, {
+            message: 'Progress report fetched successfully',
+            data: result,
+        });
+    });
+
+    getCompanyCertificates = catchAsync(async (req, res) => {
+        const query = employeeCertificateQuerySchema.parse(req.query);
+        const result = await employeeService.getCompanyCertificates(query, req.user);
+
+        ResponseHandler.success(res, {
+            message: 'Company employee certificates fetched successfully',
+            data: result,
+        });
+    });
+
     getEmployeeEnrollments = catchAsync(async (req, res) => {
         const { userId } = req.params;
         const query = employeeEnrollmentQuerySchema.parse(req.query);
