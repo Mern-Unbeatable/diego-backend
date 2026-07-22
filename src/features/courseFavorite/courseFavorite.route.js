@@ -11,7 +11,7 @@ router.use(authMiddleware.protect);
 router.use(i18nMiddleware);
 
 router.get('/', courseFavoriteController.getMyFavoriteCourses);
-router.get('/:id', courseFavoriteController.getMyFavoriteCourseIds);
+router.get('/ids', courseFavoriteController.getMyFavoriteCourseIds);
 router.get('/check/:courseId', courseFavoriteController.checkFavorite);
 router.post('/:courseId', courseFavoriteController.addFavorite);
 router.delete('/:courseId', courseFavoriteController.removeFavorite);
