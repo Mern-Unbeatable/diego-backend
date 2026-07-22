@@ -1,6 +1,7 @@
 import { prisma } from '../../config/db.js';
 import { Logger } from '../../config/logger.js';
 import {
+    DEFAULT_CERTIFICATE_ARCHIVE_PLAN,
     DEFAULT_PLATFORM_SETTINGS,
     EMERGENCY_CONTROL_LABELS,
     PLATFORM_SETTING_KEYS,
@@ -143,6 +144,99 @@ class PlatformSettingService {
 
     isMaintenanceMode(settings) {
         return Boolean(settings?.maintenanceModeEnabled);
+    }
+
+    _resolveLocalizedText(value, locale = 'it') {
+        if (!value) return null;
+        if (typeof value === 'string') return value;
+        return value[locale] || value.en || value.it || Object.values(value)[0] || null;
+    }
+
+    getCertificateArchiveConfig(settings = null) {
+        const source = settings || this._cache || DEFAULT_PLATFORM_SETTINGS;
+
+        return {
+            enabled: source.certificateArchiveEnabled ?? DEFAULT_CERTIFICATE_ARCHIVE_PLAN.certificateArchiveEnabled,
+            name: source.certificateArchiveName ?? DEFAULT_CERTIFICATE_ARCHIVE_PLAN.certificateArchiveName,
+            description: source.certificateArchiveDescription ?? DEFAULT_CERTIFICATE_ARCHIVE_PLAN.certificateArchiveDescription,
+            priceEur: Number(source.certificateArchivePriceEur ?? DEFAULT_CERTIFICATE_ARCHIVE_PLAN.certificateArchivePriceEur),
+            currency: source.certificateArchiveCurrency ?? DEFAULT_CERTIFICATE_ARCHIVE_PLAN.certificateArchiveCurrency,
+            durationDays: source.certificateArchiveDurationDays ?? DEFAULT_CERTIFICATE_ARCHIVE_PLAN.certificateArchiveDurationDays,
+            storageMb: source.certificateArchiveStorageMb ?? DEFAULT_CERTIFICATE_ARCHIVE_PLAN.certificateArchiveStorageMb,
+            freeDownloadDays: source.certificateFreeDownloadDays ?? DEFAULT_CERTIFICATE_ARCHIVE_PLAN.certificateFreeDownloadDays,
+            legalRetentionYears: source.certificateLegalRetentionYears ?? DEFAULT_CERTIFICATE_ARCHIVE_PLAN.certificateLegalRetentionYears,
+        };
+    }
+
+    async getCertificateArchivePlan(locale = 'it') {
+        const settings = await this.getSettings();
+        const config = this.getCertificateArchiveConfig(settings);
+
+        return {
+            enabled: config.enabled,
+            name: this._resolveLocalizedText(config.name, locale),
+            description: this._resolveLocalizedText(config.description, locale),
+            priceEur: config.priceEur,
+            currency: config.currency,
+            durationDays: config.durationDays,
+            storageMb: config.storageMb,
+            freeDownloadDays: config.freeDownloadDays,
+            legalRetentionYears: config.legalRetentionYears,
+            localized: {
+                name: config.name,
+                description: config.description,
+            },
+            updatedAt: settings.updatedAt,
+            updatedById: settings.updatedById,
+        };
+    }
+
+    async getCertificateArchivePlanForAdmin(locale = 'it') {
+        const settings = await this.getSettings();
+        const plan = await this.getCertificateArchivePlan(locale);
+
+        return {
+            ...plan,
+            defaults: DEFAULT_CERTIFICATE_ARCHIVE_PLAN,
+            raw: {
+                enabled: settings.certificateArchiveEnabled,
+                name: settings.certificateArchiveName,
+                description: settings.certificateArchiveDescription,
+                priceEur: Number(settings.certificateArchivePriceEur),
+                currency: settings.certificateArchiveCurrency,
+                durationDays: settings.certificateArchiveDurationDays,
+                storageMb: settings.certificateArchiveStorageMb,
+                freeDownloadDays: settings.certificateFreeDownloadDays,
+                legalRetentionYears: settings.certificateLegalRetentionYears,
+            },
+        };
+    }
+
+    async updateCertificateArchivePlan(payload, userId) {
+        const data = {};
+
+        if (payload.enabled !== undefined) data.certificateArchiveEnabled = payload.enabled;
+        if (payload.name !== undefined) data.certificateArchiveName = payload.name;
+        if (payload.description !== undefined) data.certificateArchiveDescription = payload.description;
+        if (payload.priceEur !== undefined) data.certificateArchivePriceEur = payload.priceEur;
+        if (payload.currency !== undefined) data.certificateArchiveCurrency = payload.currency.toUpperCase();
+        if (payload.durationDays !== undefined) data.certificateArchiveDurationDays = payload.durationDays;
+        if (payload.storageMb !== undefined) data.certificateArchiveStorageMb = payload.storageMb;
+        if (payload.freeDownloadDays !== undefined) data.certificateFreeDownloadDays = payload.freeDownloadDays;
+        if (payload.legalRetentionYears !== undefined) data.certificateLegalRetentionYears = payload.legalRetentionYears;
+
+        const updated = await prisma.platformSetting.update({
+            where: { id: 'global' },
+            data: {
+                ...data,
+                updatedById: userId,
+            },
+        });
+
+        this._invalidateCache();
+        log.info(`Certificate archive plan updated by ${userId}`, data);
+
+        return updated;
     }
 }
 

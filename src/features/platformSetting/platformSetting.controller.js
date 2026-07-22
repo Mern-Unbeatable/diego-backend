@@ -2,7 +2,7 @@ import { Logger } from '../../config/logger.js';
 import { catchAsync } from '../../shared/globals/decorators/catch-async.js';
 import { ResponseHandler } from '../../shared/globals/helpers/response.handler.js';
 import { platformSettingService } from './platformSetting.service.js';
-import { updateEmergencyControlsSchema } from './platformSetting.validation.js';
+import { updateEmergencyControlsSchema, updateCertificateArchivePlanSchema } from './platformSetting.validation.js';
 
 class PlatformSettingController {
     constructor() {
@@ -45,6 +45,26 @@ class PlatformSettingController {
                     updatedAt: updated.updatedAt,
                 },
             },
+        });
+    });
+
+    getCertificateArchivePlan = catchAsync(async (req, res) => {
+        const plan = await platformSettingService.getCertificateArchivePlanForAdmin(req.locale);
+
+        ResponseHandler.success(res, {
+            message: 'Certificate archive plan fetched successfully',
+            data: plan,
+        });
+    });
+
+    updateCertificateArchivePlan = catchAsync(async (req, res) => {
+        const payload = updateCertificateArchivePlanSchema.parse(req.body);
+        await platformSettingService.updateCertificateArchivePlan(payload, req.user.id);
+        const plan = await platformSettingService.getCertificateArchivePlanForAdmin(req.locale);
+
+        ResponseHandler.success(res, {
+            message: 'Certificate archive plan updated successfully',
+            data: plan,
         });
     });
 }

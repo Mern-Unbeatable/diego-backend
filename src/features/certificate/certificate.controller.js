@@ -31,7 +31,7 @@ class CertificateController {
     });
 
     getArchivePlan = catchAsync(async (req, res) => {
-        const status = await certificateService.getArchiveStatus(req.user.id);
+        const status = await certificateService.getArchiveStatus(req.user.id, req.locale);
         ResponseHandler.success(res, {
             message: 'Archive plan fetched',
             data: status,

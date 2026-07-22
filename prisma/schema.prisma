@@ -1341,6 +1341,16 @@ model PlatformSetting {
   maintenanceModeEnabled     Boolean @default(false)
   maintenanceMessage         Json?
 
+  certificateArchiveEnabled      Boolean @default(true)
+  certificateArchiveName         Json?
+  certificateArchiveDescription  Json?
+  certificateArchivePriceEur     Decimal @default(29.99) @db.Decimal(10, 2)
+  certificateArchiveCurrency     String  @default("EUR")
+  certificateArchiveDurationDays Int     @default(365)
+  certificateArchiveStorageMb    Int     @default(1024)
+  certificateFreeDownloadDays    Int     @default(30)
+  certificateLegalRetentionYears Int     @default(5)
+
   updatedById String?
   updatedAt   DateTime @updatedAt
   createdAt   DateTime @default(now())

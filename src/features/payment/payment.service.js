@@ -5,7 +5,6 @@ import { Logger } from '../../config/logger.js';
 import { addDays } from 'date-fns';
 import { notificationService } from '../notification/notification.service.js';
 import { activateArchiveSubscription } from '../certificate/certificate.archive.js';
-import { ARCHIVE_ANNUAL_PRICE_EUR } from '../certificate/certificate.constants.js';
 import { PLATFORM_FEE_PERCENT } from '../Income/Income.constants.js';
 import { platformSettingService } from '../platformSetting/platformSetting.service.js';
 
@@ -1252,7 +1251,12 @@ class PaymentService {
       throw new Error('Archive storage is available for private and company users only');
     }
 
-    const finalPrice = ARCHIVE_ANNUAL_PRICE_EUR;
+    const archivePlan = await platformSettingService.getCertificateArchivePlan();
+    if (!archivePlan.enabled) {
+      throw new Error('Certificate archive storage is currently unavailable');
+    }
+
+    const finalPrice = archivePlan.priceEur;
     const effectiveTenantId = tenantId || user.tenantId || null;
 
     let stripeCustomerId;
@@ -1274,10 +1278,10 @@ class PaymentService {
       cancel_url: `${config.CLIENT_URL}/certificates/archive/cancel`,
       line_items: [{
         price_data: {
-          currency: 'eur',
+          currency: archivePlan.currency.toLowerCase(),
           product_data: {
-            name: 'Certificate Archive Storage (1 year)',
-            description: 'Download your training certificates beyond the 30-day free window',
+            name: `${archivePlan.name} (${archivePlan.durationDays} days)`,
+            description: archivePlan.description,
             metadata: { userId, type: 'ARCHIVE_STORAGE' },
           },
           unit_amount: Math.round(finalPrice * 100),
@@ -1297,7 +1301,7 @@ class PaymentService {
         type: 'ARCHIVE_STORAGE',
         status: 'PENDING',
         amount: finalPrice,
-        currency: 'EUR',
+        currency: archivePlan.currency,
         stripeSessionId: session.id,
         stripeCustomerId,
         tenantId: effectiveTenantId,

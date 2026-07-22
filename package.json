@@ -21,7 +21,8 @@
     "prisma:studio": "prisma studio",
     "seeds:admin": "node src/seeds/admin.seeder.js",
     "seeds:package": "node src/seeds/package.seeder.js",
-    "seeds:course-package": "node src/seeds/seed-course-packages.js"
+    "seeds:course-package": "node src/seeds/seed-course-packages.js",
+    "seeds:archive-plan": "node src/seeds/certificate-archive-plan.seeder.js"
   },
   "keywords": [],
   "author": "",

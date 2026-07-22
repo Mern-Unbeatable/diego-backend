@@ -7,6 +7,7 @@ import { startExpiryCheckJob } from './shared/jobs/expiry-check.js';
 import { seedPackages } from './seeds/package.seeder.js';
 import { seedUsers } from './seeds/user.seeder.js';
 import { seedCoursePackages } from './seeds/seed-course-packages.js';
+import { seedCertificateArchivePlan } from './seeds/certificate-archive-plan.seeder.js';
 
 const startApplication = async () => {
   const application = new Application();
@@ -22,6 +23,10 @@ const startApplication = async () => {
     config.logger.info('Package seed check completed');
     await seedLicensePlans();
     config.logger.info('License plan seed check completed');
+
+    await seedCertificateArchivePlan();
+    config.logger.info('Certificate archive plan seed check completed');
+
     application.start();
     startExpiryCheckJob();
     config.logger.info('Application started successfully');

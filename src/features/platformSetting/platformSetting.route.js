@@ -15,5 +15,7 @@ router.use(authMiddleware.protect);
 const platformAdminGuard = authMiddleware.authorize('PLATFORM_ADMIN');
 router.get('/emergency-controls', platformAdminGuard, platformSettingController.getEmergencyControls);
 router.patch('/emergency-controls', platformAdminGuard, platformSettingController.updateEmergencyControls);
+router.get('/certificate-archive-plan', platformAdminGuard, platformSettingController.getCertificateArchivePlan);
+router.patch('/certificate-archive-plan', platformAdminGuard, platformSettingController.updateCertificateArchivePlan);
 
 export const platformSettingRoutes = router;

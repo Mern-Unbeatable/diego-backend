@@ -1,22 +1,25 @@
 import { addDays, addYears, differenceInCalendarDays } from 'date-fns';
 import { prisma } from '../../config/db.js';
-import { ARCHIVE_ANNUAL_PRICE_EUR, ARCHIVE_STORAGE_MB, ARCHIVE_SUBSCRIPTION_DAYS, CERTIFICATE_FREE_DOWNLOAD_DAYS, CERTIFICATE_LEGAL_RETENTION_YEARS } from './certificate.constants.js';
-export const getArchivePlan = () => ({
-    name: 'Certificate Archive Storage',
-    description: 'Keep and download your training certificates beyond the 30-day free window.',
-    priceEur: ARCHIVE_ANNUAL_PRICE_EUR,
-    currency: 'EUR',
-    durationDays: ARCHIVE_SUBSCRIPTION_DAYS,
-    storageMb: ARCHIVE_STORAGE_MB,
-    freeDownloadDays: CERTIFICATE_FREE_DOWNLOAD_DAYS,
-    legalRetentionYears: CERTIFICATE_LEGAL_RETENTION_YEARS,
-});
+import { platformSettingService } from '../platformSetting/platformSetting.service.js';
 
-export const computeFreeDownloadUntil = (issuedAt = new Date()) =>
-    addDays(new Date(issuedAt), CERTIFICATE_FREE_DOWNLOAD_DAYS);
+export async function getArchivePlan(locale = 'it') {
+    return platformSettingService.getCertificateArchivePlan(locale);
+}
 
-export const computeLegalRetentionUntil = (issuedAt = new Date()) =>
-    addYears(new Date(issuedAt), CERTIFICATE_LEGAL_RETENTION_YEARS);
+export async function getArchiveConfig() {
+    const settings = await platformSettingService.getSettings();
+    return platformSettingService.getCertificateArchiveConfig(settings);
+}
+
+export async function computeFreeDownloadUntil(issuedAt = new Date()) {
+    const config = await getArchiveConfig();
+    return addDays(new Date(issuedAt), config.freeDownloadDays);
+}
+
+export async function computeLegalRetentionUntil(issuedAt = new Date()) {
+    const config = await getArchiveConfig();
+    return addYears(new Date(issuedAt), config.legalRetentionYears);
+}
 
 export async function getActiveArchiveSubscription(userId) {
     if (!userId) return null;
@@ -69,8 +72,9 @@ export function formatCertificateAccess(certificate, hasArchiveAccess) {
 }
 
 export async function activateArchiveSubscription(userId, paymentId, tenantId = null) {
+    const config = await getArchiveConfig();
     const now = new Date();
-    const expiresAt = addDays(now, ARCHIVE_SUBSCRIPTION_DAYS);
+    const expiresAt = addDays(now, config.durationDays);
 
     const existing = await prisma.archiveSubscription.findUnique({ where: { userId } });
 
@@ -81,7 +85,7 @@ export async function activateArchiveSubscription(userId, paymentId, tenantId = 
                 isActive: true,
                 startedAt: now,
                 expiresAt,
-                storageMb: ARCHIVE_STORAGE_MB,
+                storageMb: config.storageMb,
                 tenantId: tenantId ?? existing.tenantId,
             },
         })
@@ -91,7 +95,7 @@ export async function activateArchiveSubscription(userId, paymentId, tenantId = 
                 isActive: true,
                 startedAt: now,
                 expiresAt,
-                storageMb: ARCHIVE_STORAGE_MB,
+                storageMb: config.storageMb,
                 tenantId,
             },
         });
@@ -103,8 +107,7 @@ export async function activateArchiveSubscription(userId, paymentId, tenantId = 
         });
     }
 
-    // Restore download access for certificates still within legal retention
-    const retentionCutoff = addYears(now, -CERTIFICATE_LEGAL_RETENTION_YEARS);
+    const retentionCutoff = addYears(now, -config.legalRetentionYears);
     await prisma.certificate.updateMany({
         where: {
             userId,

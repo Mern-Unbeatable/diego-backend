@@ -15,7 +15,6 @@ import {
     getArchivePlan,
     userHasArchiveAccess,
 } from './certificate.archive.js';
-import { CERTIFICATE_FREE_DOWNLOAD_DAYS } from './certificate.constants.js';
 import { platformSettingService } from '../platformSetting/platformSetting.service.js';
 import {
     generateCertificatePdf,
@@ -152,7 +151,7 @@ export class CertificateService {
                 existingCertificateId: existing?.id || null,
                 companyLogoUrl: null,
                 issueDate: new Date(),
-                expiryDate: computeFreeDownloadUntil(new Date()),
+                expiryDate: await computeFreeDownloadUntil(new Date()),
             });
         } catch (error) {
             log.error(`autoGenerateOnCompletion failed for enrollment ${enrollmentId}: ${error.message}`);
@@ -264,6 +263,7 @@ export class CertificateService {
 
         const archiveSubscription = await getActiveArchiveSubscription(userId);
         const hasArchiveAccess = Boolean(archiveSubscription);
+        const archivePlan = await getArchivePlan(locale);
 
         const [certificates, total] = await Promise.all([
             prisma.certificate.findMany({
@@ -288,8 +288,8 @@ export class CertificateService {
             archive: {
                 hasActiveSubscription: hasArchiveAccess,
                 expiresAt: archiveSubscription?.expiresAt ?? null,
-                plan: getArchivePlan(),
-                freeDownloadDays: CERTIFICATE_FREE_DOWNLOAD_DAYS,
+                plan: archivePlan,
+                freeDownloadDays: archivePlan.freeDownloadDays,
             },
             appliedFilters: {
                 search: queryParams.search ?? null,
@@ -325,13 +325,14 @@ export class CertificateService {
         };
     }
 
-    async getArchiveStatus(userId) {
+    async getArchiveStatus(userId, locale = 'it') {
         const subscription = await getActiveArchiveSubscription(userId);
         const certCount = await prisma.certificate.count({
             where: { userId, status: 'ISSUED' },
         });
+        const plan = await getArchivePlan(locale);
         return {
-            plan: getArchivePlan(),
+            plan,
             subscription: subscription
                 ? {
                     id: subscription.id,
@@ -470,7 +471,7 @@ export class CertificateService {
             issueDate: issueDate ? new Date(issueDate) : now,
             expiryDate: expiryDate
                 ? new Date(expiryDate)
-                : computeFreeDownloadUntil(issueDate ? new Date(issueDate) : now),
+                : await computeFreeDownloadUntil(issueDate ? new Date(issueDate) : now),
             includeRelations: true,
         });
 
@@ -563,8 +564,9 @@ export class CertificateService {
                 freeDownloadMessage: 'Company admin download',
             };
         } else if (!access.canDownload) {
+            const archiveConfig = await platformSettingService.getCertificateArchivePlan();
             throw new Error(
-                'Certificate free download period (30 days) has expired. ' +
+                `Certificate free download period (${archiveConfig.freeDownloadDays} days) has expired. ` +
                 'Purchase archive storage at GET /api/v1/certificates/archive/plan to download again.'
             );
         }
@@ -582,7 +584,7 @@ export class CertificateService {
                 existingCertificateId: certificate.id,
                 companyLogoUrl: null,
                 issueDate: certificate.issuedAt || new Date(),
-                expiryDate: certificate.downloadableUntil || computeFreeDownloadUntil(),
+                expiryDate: certificate.downloadableUntil || await computeFreeDownloadUntil(),
             });
             certificate = { ...certificate, pdfUrl: regenerated.pdfUrl };
         }
