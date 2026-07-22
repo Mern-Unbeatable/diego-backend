@@ -60,7 +60,26 @@ class QuizService {
         return quiz;
     }
 
-    // ── এই মেথডটা validate করে student এই enrollment-এর মালিক কিনা ──
+    // ── Validates enrollment ownership; auto-resolves from userId + courseId when omitted ──
+    async _resolveStudentEnrollment(courseId, userId, enrollmentId = null) {
+        if (enrollmentId) {
+            return this._validateStudentEnrollment(enrollmentId, courseId, userId);
+        }
+
+        const enrollment = await prisma.enrollment.findUnique({
+            where: { userId_courseId: { userId, courseId } },
+            select: { id: true, userId: true, courseId: true, status: true },
+        });
+
+        if (!enrollment) {
+            throw new Error('You are not enrolled in this course. Please enroll before starting the quiz.');
+        }
+        if (enrollment.status === 'EXPIRED') throw new Error('Your enrollment has expired');
+        if (enrollment.status === 'SUSPENDED') throw new Error('Your enrollment is suspended');
+
+        return enrollment;
+    }
+
     async _validateStudentEnrollment(enrollmentId, courseId, userId) {
         const enrollment = await prisma.enrollment.findUnique({
             where: { id: enrollmentId },
@@ -93,9 +112,17 @@ class QuizService {
         }
 
         const where = { courseId };
+        const isLearner = user && !['PLATFORM_ADMIN', 'LICENSE_USER'].includes(user.level);
+
         if (queryParams.quizType) where.quizType = queryParams.quizType;
-        if (queryParams.isPublished !== undefined) where.isPublished = queryParams.isPublished === 'true';
-        if (queryParams.isActive !== undefined) where.isActive = queryParams.isActive === 'true';
+
+        if (isLearner) {
+            where.isPublished = true;
+            where.isActive = true;
+        } else {
+            if (queryParams.isPublished !== undefined) where.isPublished = queryParams.isPublished === 'true';
+            if (queryParams.isActive !== undefined) where.isActive = queryParams.isActive === 'true';
+        }
 
         const [quizzes, total] = await Promise.all([
             prisma.quiz.findMany({ where, orderBy: { createdAt: 'asc' }, skip, take: limit, select: quizListSelect }),
@@ -120,15 +147,16 @@ class QuizService {
         return localizeObject(quiz, locale, QUIZ_I18N_KEYS);
     }
 
-    // ── ✅ FIX: এখন enrollmentId + userId বাধ্যতামূলক, ownership check হবে ──
-    // ── ✅ FIX: FINAL_TEST হলে required lessons আগে শেষ থাকতে হবে ──
-    async getQuizForLearner(quizId, courseId, enrollmentId, userId, locale = 'it') {
-        const enrollment = await this._validateStudentEnrollment(enrollmentId, courseId, userId);
+
+    async getQuizForLearner(quizId, courseId, userId, locale = 'it', enrollmentId = null) {
+        const enrollment = await this._resolveStudentEnrollment(courseId, userId, enrollmentId);
+        const resolvedEnrollmentId = enrollment.id;
 
         const quiz = await this.getQuizById(quizId, locale, null);
         if (!quiz) return null;
         if (quiz.courseId !== courseId) return null;
         if (!quiz.isPublished) throw new Error('Quiz is not available');
+        if (!quiz.isActive) throw new Error('Quiz is not available');
 
         if (quiz.quizType === 'FINAL_TEST') {
             const requiredLessons = await prisma.lesson.findMany({
@@ -137,7 +165,7 @@ class QuizService {
             });
             if (requiredLessons.length > 0) {
                 const progressRecords = await prisma.lessonProgress.findMany({
-                    where: { enrollmentId, lessonId: { in: requiredLessons.map(l => l.id) } },
+                    where: { enrollmentId: resolvedEnrollmentId, lessonId: { in: requiredLessons.map(l => l.id) } },
                     select: { lessonId: true, completed: true, scormStatus: true },
                 });
                 const progressMap = new Map(progressRecords.map(p => [p.lessonId, p]));
@@ -156,10 +184,14 @@ class QuizService {
         }
 
         const alreadyPassed = await prisma.quizAttempt.findFirst({
-            where: { quizId, enrollmentId, passed: true },
+            where: { quizId, enrollmentId: resolvedEnrollmentId, passed: true },
             select: { id: true, scorePercent: true, attemptedAt: true },
         });
-        const attemptsUsed = await prisma.quizAttempt.count({ where: { quizId, enrollmentId } });
+        const attemptsUsed = await prisma.quizAttempt.count({ where: { quizId, enrollmentId: resolvedEnrollmentId } });
+
+        if (quiz.maxAttempts && attemptsUsed >= quiz.maxAttempts && !alreadyPassed) {
+            throw new Error(`Maximum attempts (${quiz.maxAttempts}) reached for this quiz`);
+        }
 
         // Correct answer client-এ পাঠানো যাবে না
         if (Array.isArray(quiz.questions)) {
@@ -174,7 +206,7 @@ class QuizService {
 
         return {
             ...quiz,
-            enrollmentId,
+            enrollmentId: resolvedEnrollmentId,
             alreadyPassed: !!alreadyPassed,
             bestAttempt: alreadyPassed ?? null,
             attemptsUsed,
@@ -275,29 +307,30 @@ class QuizService {
     }
 
     // ── ✅ FIX: এখন সরাসরি enrollment.update করে না, checkAndUpdateEnrollmentStatus কল করে ──
-    async submitQuizAttempt(quizId, courseId, enrollmentId, userId, answers) {
+    async submitQuizAttempt(quizId, courseId, userId, answers, enrollmentId = null) {
         const quiz = await prisma.quiz.findUnique({
             where: { id: quizId },
             select: {
-                id: true, courseId: true, quizType: true, isPublished: true,
+                id: true, courseId: true, quizType: true, isPublished: true, isActive: true,
                 passScorePercent: true, questions: true, maxAttempts: true,
             },
         });
         if (!quiz) throw new Error('Quiz not found');
         if (quiz.courseId !== courseId) throw new Error('Quiz does not belong to this course');
-        if (!quiz.isPublished) throw new Error('Quiz is not published yet');
+        if (!quiz.isPublished || !quiz.isActive) throw new Error('Quiz is not published yet');
 
-        await this._validateStudentEnrollment(enrollmentId, courseId, userId);
+        const enrollment = await this._resolveStudentEnrollment(courseId, userId, enrollmentId);
+        const resolvedEnrollmentId = enrollment.id;
 
         if (quiz.maxAttempts) {
-            const attemptCount = await prisma.quizAttempt.count({ where: { quizId, enrollmentId } });
+            const attemptCount = await prisma.quizAttempt.count({ where: { quizId, enrollmentId: resolvedEnrollmentId } });
             if (attemptCount >= quiz.maxAttempts) {
                 throw new Error(`Maximum attempts (${quiz.maxAttempts}) reached for this quiz`);
             }
         }
 
         const alreadyPassed = await prisma.quizAttempt.findFirst({
-            where: { quizId, enrollmentId, passed: true },
+            where: { quizId, enrollmentId: resolvedEnrollmentId, passed: true },
             select: { id: true },
         });
         if (alreadyPassed) {
@@ -356,16 +389,17 @@ class QuizService {
         const passed = !hasPendingManualReview && scorePercent >= quiz.passScorePercent;
 
         const attempt = await prisma.quizAttempt.create({
-            data: { quizId, enrollmentId, scorePercent, passed, answers: gradedAnswers },
+            data: { quizId, enrollmentId: resolvedEnrollmentId, scorePercent, passed, answers: gradedAnswers },
         });
 
         // ✅ FIX: enrollment completion-এর একমাত্র সোর্স এখন enrollmentService
         if (passed) {
-            await enrollmentService.checkAndUpdateEnrollmentStatus(enrollmentId);
+            await enrollmentService.checkAndUpdateEnrollmentStatus(resolvedEnrollmentId);
         }
 
         return {
             attemptId: attempt.id,
+            enrollmentId: resolvedEnrollmentId,
             scorePercent,
             passed,
             pendingManualReview: hasPendingManualReview,

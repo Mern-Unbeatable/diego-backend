@@ -92,8 +92,12 @@ export const quizQuerySchema = z.object({
     isActive: z.string().transform((v) => v === 'true').optional(),
 });
 
+export const startQuizQuerySchema = z.object({
+    enrollmentId: z.string().uuid().optional(),
+});
+
 export const submitQuizSchema = z.object({
-    enrollmentId: z.string().uuid({ message: 'enrollmentId is required' }),
+    enrollmentId: z.string().uuid().optional(),
     answers: z
         .array(
             z.object({

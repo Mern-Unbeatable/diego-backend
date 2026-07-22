@@ -9,6 +9,7 @@ import {
     submitQuizSchema,
     quizAttemptQuerySchema,
     gradeManualAnswerSchema,
+    startQuizQuerySchema,
 } from './quiz.validation.js';
 
 class QuizController {
@@ -36,13 +37,18 @@ class QuizController {
         ResponseHandler.success(res, { message: 'Quizzes fetched', data: result });
     });
 
-    // ✅ FIX: এখন enrollmentId query param লাগবে ownership যাচাইয়ের জন্য
+
     getQuizForLearner = catchAsync(async (req, res) => {
         const { quizId, courseId } = req.params;
-        const { enrollmentId } = req.query;
-        if (!enrollmentId) throw new Error('enrollmentId query parameter is required');
+        const { enrollmentId } = startQuizQuerySchema.parse(req.query);
 
-        const quiz = await quizService.getQuizForLearner(quizId, courseId, enrollmentId, req.user.id, req.locale);
+        const quiz = await quizService.getQuizForLearner(
+            quizId,
+            courseId,
+            req.user.id,
+            req.locale,
+            enrollmentId ?? null,
+        );
         if (!quiz) throw new Error('Quiz not found');
 
         ResponseHandler.success(res, { message: 'Quiz started — questions loaded', data: { quiz } });
@@ -52,7 +58,13 @@ class QuizController {
         const { quizId, courseId } = req.params;
         const { enrollmentId, answers } = submitQuizSchema.parse(req.body);
 
-        const result = await quizService.submitQuizAttempt(quizId, courseId, enrollmentId, req.user.id, answers);
+        const result = await quizService.submitQuizAttempt(
+            quizId,
+            courseId,
+            req.user.id,
+            answers,
+            enrollmentId ?? null,
+        );
 
         this.log.info(`Quiz submitted: ${quizId} by user ${req.user.id} | score: ${result.scorePercent}% | passed: ${result.passed}`);
 

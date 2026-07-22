@@ -23,8 +23,6 @@ class MailTransport {
     const smtpFrom = (config.SMTP_FROM || config.SMTP_USER || '').toLowerCase();
     const isGmailHost = `${config.SMTP_HOST || ''}`.toLowerCase().includes('gmail');
 
-    // For Gmail SMTP, forcing an unrelated From domain hurts deliverability and
-    // may cause messages to be rewritten or routed to spam. Use SMTP_USER.
     if (isGmailHost && smtpFrom && smtpUser) {
       const fromDomain = smtpFrom.split('@')[1];
       const userDomain = smtpUser.split('@')[1];

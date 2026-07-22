@@ -320,14 +320,15 @@ model Package {
 }
 
 model Employee {
-  id        String   @id @default(uuid())
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id])
-  companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
-  jobTitle  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  user           User      @relation(fields: [userId], references: [id])
+  companyId      String
+  company        Company   @relation(fields: [companyId], references: [id])
+  jobTitle       String?
+  employmentDate DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([companyId])
 }

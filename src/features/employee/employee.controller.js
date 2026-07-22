@@ -7,6 +7,7 @@ import {
     updateEmployeeSchema,
     employeeQuerySchema,
 } from './employee.validation.js';
+import { EMPLOYEE_ROLE_SUGGESTIONS } from './employee.constants.js';
 
 class EmployeeController {
     constructor() {
@@ -19,9 +20,13 @@ class EmployeeController {
 
         this.log.info(`Employee added: ${result.employee.email} by ${req.user.id}`);
         ResponseHandler.created(res, {
-            message: result.assignedCoursesCount > 0
-                ? 'Employee added and courses assigned successfully.'
-                : 'Employee added successfully. You can assign courses later.',
+            message: result.emailSent
+                ? (result.assignedCoursesCount > 0
+                    ? 'Employee added, courses assigned, and login credentials emailed successfully.'
+                    : 'Employee added and login credentials emailed successfully.')
+                : (result.assignedCoursesCount > 0
+                    ? 'Employee added and courses assigned. Email could not be sent — share credentials manually.'
+                    : 'Employee added successfully. Email could not be sent — share credentials manually.'),
             data: result,
         });
     });
@@ -53,8 +58,26 @@ class EmployeeController {
 
         this.log.info(`Employee updated: ${userId} by ${req.user.id}`);
         ResponseHandler.updated(res, {
-            message: 'Employee updated successfully',
-            data: { employee: result },
+            message: result.assignedCoursesCount > 0
+                ? 'Employee updated and new course(s) assigned successfully'
+                : 'Employee updated successfully',
+            data: result,
+        });
+    });
+
+    getAssignableCourses = catchAsync(async (req, res) => {
+        const courses = await employeeService.getAssignableCourses(req.user);
+
+        ResponseHandler.success(res, {
+            message: 'Assignable courses fetched successfully',
+            data: { courses },
+        });
+    });
+
+    getRoleSuggestions = catchAsync(async (_req, res) => {
+        ResponseHandler.success(res, {
+            message: 'Employee role suggestions fetched',
+            data: { roles: EMPLOYEE_ROLE_SUGGESTIONS },
         });
     });
 

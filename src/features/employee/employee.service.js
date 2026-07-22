@@ -89,6 +89,212 @@ class EmployeeService {
         return dbUser.companyId;
     }
 
+    _formatCourseTitle(courseTitle) {
+        if (!courseTitle) return 'Course';
+        if (typeof courseTitle === 'string') return courseTitle;
+        return courseTitle.en || courseTitle.it || Object.values(courseTitle)[0] || 'Course';
+    }
+
+    _mapAssignedCourse(enrollments = []) {
+        if (!enrollments.length) {
+            return {
+                courseId: null,
+                courseTitle: null,
+                assignedCourse: null,
+            };
+        }
+
+        const primary = enrollments[0];
+        const course = primary.course ?? primary;
+        const title = this._formatCourseTitle(course.courseTitle);
+
+        return {
+            courseId: course.id,
+            courseTitle: title,
+            assignedCourse: {
+                enrollmentId: primary.id ?? null,
+                courseId: course.id,
+                title,
+                slug: course.slug ?? null,
+                status: primary.status ?? null,
+            },
+        };
+    }
+
+    _mapEmployeeRecord(employee, user, enrollments = []) {
+        const assigned = this._mapAssignedCourse(enrollments);
+
+        return {
+            id: employee.id,
+            userId: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            contactNumber: user.contactNumber,
+            birthDate: user.birthDate,
+            city: user.city,
+            traineeTaxCode: user.traineeTaxCode,
+            jobTitle: employee.jobTitle,
+            role: employee.jobTitle,
+            employmentDate: employee.employmentDate,
+            isActive: user.isActive,
+            status: user.status,
+            state: user.status === 'ACTIVE' ? 'Active' : user.status === 'SUSPENDED' ? 'Suspended' : user.status,
+            courseId: assigned.courseId,
+            courseTitle: assigned.courseTitle,
+            assignedCourse: assigned.assignedCourse,
+            joinedAt: employee.createdAt,
+        };
+    }
+
+    async _assignCoursesToUser(tx, {
+        userId,
+        companyId,
+        courseIds = [],
+        companyCoursePurchaseId = null,
+        tenantId = null,
+    }) {
+        if (!courseIds.length && !companyCoursePurchaseId) return [];
+
+        let courses = [];
+        if (courseIds.length > 0) {
+            courses = await tx.course.findMany({
+                where: {
+                    id: { in: courseIds },
+                    isActive: true,
+                    ...(tenantId && { tenantId }),
+                },
+                select: { id: true, courseTitle: true, validityDays: true, slug: true },
+            });
+
+            if (courses.length !== courseIds.length) {
+                throw new Error('Some courses are invalid or not active');
+            }
+        }
+
+        const existingEnrollments = courseIds.length > 0
+            ? await tx.enrollment.findMany({
+                where: { userId, courseId: { in: courseIds } },
+                select: { courseId: true },
+            })
+            : [];
+        const alreadyEnrolled = new Set(existingEnrollments.map((e) => e.courseId));
+
+        const enrollments = [];
+
+        if (companyCoursePurchaseId) {
+            const selectedCourseId = courses[0]?.id || null;
+            const purchase = await this._reserveSpecificPurchaseSeat(tx, {
+                companyCoursePurchaseId,
+                companyId,
+                courseId: selectedCourseId,
+            });
+
+            const duplicateEnrollment = await tx.enrollment.findUnique({
+                where: { userId_courseId: { userId, courseId: purchase.courseId } },
+                select: { id: true },
+            });
+            if (duplicateEnrollment || alreadyEnrolled.has(purchase.courseId)) {
+                throw new Error('Employee is already enrolled in this course');
+            }
+
+            let selectedCourse = courses[0];
+            if (!selectedCourse) {
+                selectedCourse = await tx.course.findUnique({
+                    where: { id: purchase.courseId },
+                    select: { id: true, courseTitle: true, validityDays: true, slug: true, tenantId: true, isActive: true },
+                });
+                if (!selectedCourse?.isActive) throw new Error('Course for this corporate purchase is not active');
+                if (tenantId && selectedCourse.tenantId !== tenantId) {
+                    throw new Error('Course tenant mismatch for this purchase');
+                }
+            }
+
+            const enrollment = await tx.enrollment.create({
+                data: {
+                    userId,
+                    courseId: selectedCourse.id,
+                    companyCoursePurchaseId: purchase.id,
+                    companyContextId: companyId,
+                    expiresAt: purchase.expiresAt,
+                    status: 'NOT_STARTED',
+                    accessLinkToken: randomBytes(24).toString('hex'),
+                    accessLinkExpiresAt: purchase.expiresAt,
+                    accessLinkUsed: false,
+                },
+                include: { course: { select: { id: true, courseTitle: true, slug: true } } },
+            });
+            enrollments.push(enrollment);
+            return enrollments;
+        }
+
+        for (const course of courses) {
+            if (alreadyEnrolled.has(course.id)) continue;
+
+            const purchase = await this._reserveAnyPurchaseSeat(tx, { companyId, courseId: course.id });
+            const enrollment = await tx.enrollment.create({
+                data: {
+                    userId,
+                    courseId: course.id,
+                    companyCoursePurchaseId: purchase.id,
+                    companyContextId: companyId,
+                    expiresAt: purchase.expiresAt,
+                    status: 'NOT_STARTED',
+                    accessLinkToken: randomBytes(24).toString('hex'),
+                    accessLinkExpiresAt: purchase.expiresAt,
+                    accessLinkUsed: false,
+                },
+                include: { course: { select: { id: true, courseTitle: true, slug: true } } },
+            });
+            enrollments.push(enrollment);
+        }
+
+        if (courseIds.length > 0 && enrollments.length === 0) {
+            throw new Error('Employee is already enrolled in the selected course(s)');
+        }
+
+        return enrollments;
+    }
+
+    async getAssignableCourses(adminUser) {
+        const companyId = await this._resolveCompanyId(adminUser);
+
+        const purchases = await prisma.companyCoursePurchase.findMany({
+            where: {
+                companyId,
+                expiresAt: { gt: new Date() },
+            },
+            orderBy: [{ expiresAt: 'asc' }, { purchasedAt: 'asc' }],
+            include: {
+                course: {
+                    select: {
+                        id: true,
+                        courseTitle: true,
+                        slug: true,
+                        category: true,
+                        thumbnailUrl: true,
+                        isActive: true,
+                    },
+                },
+            },
+        });
+
+        return purchases
+            .filter((p) => p.seatsUsed < p.seatsTotal && p.course?.isActive)
+            .map((p) => ({
+                companyCoursePurchaseId: p.id,
+                courseId: p.courseId,
+                courseTitle: p.course.courseTitle,
+                slug: p.course.slug,
+                category: p.course.category,
+                thumbnailUrl: p.course.thumbnailUrl,
+                seatsTotal: p.seatsTotal,
+                seatsUsed: p.seatsUsed,
+                seatsAvailable: p.seatsTotal - p.seatsUsed,
+                expiresAt: p.expiresAt,
+            }));
+    }
+
     async addEmployee(data, adminUser) {
         const companyId = await this._resolveCompanyId(adminUser);
 
@@ -111,7 +317,7 @@ class EmployeeService {
             select: { tenantId: true },
         });
 
-        const requestedCourseIds = data.courseIds || [];
+        const requestedCourseIds = data.courseIds ?? [];
         let courses = [];
         if (requestedCourseIds.length > 0) {
             courses = await prisma.course.findMany({
@@ -145,9 +351,9 @@ class EmployeeService {
                     city: data.city ?? null,
                     traineeTaxCode: data.traineeTaxCode ?? null,
                     level: 'COMPANY_EMPLOYEE',
-                    status: 'ACTIVE',
+                    status: data.status ?? 'ACTIVE',
                     isVerified: true,
-                    isActive: true,
+                    isActive: (data.status ?? 'ACTIVE') === 'ACTIVE',
                     verifiedAt: new Date(),
                     profileCompleted: true,
                     consentGiven: true,
@@ -161,106 +367,34 @@ class EmployeeService {
                 data: {
                     userId: newUser.id,
                     companyId: companyId,
-                    jobTitle: data.jobTitle ?? null,
+                    jobTitle: data.jobTitle ?? data.role ?? null,
+                    employmentDate: data.employmentDate,
                 },
             });
 
-            const enrollments = [];
-
-            if (data.companyCoursePurchaseId) {
-                const selectedCourseId = courses[0]?.id || null;
-                const purchase = await this._reserveSpecificPurchaseSeat(tx, {
-                    companyCoursePurchaseId: data.companyCoursePurchaseId,
-                    companyId,
-                    courseId: selectedCourseId,
-                });
-
-                let selectedCourse = courses[0];
-                if (!selectedCourse) {
-                    selectedCourse = await tx.course.findUnique({
-                        where: { id: purchase.courseId },
-                        select: { id: true, courseTitle: true, validityDays: true, slug: true, tenantId: true, isActive: true },
-                    });
-
-                    if (!selectedCourse || !selectedCourse.isActive) {
-                        throw new Error('Course for this corporate purchase is not active');
-                    }
-                    if (adminFull?.tenantId && selectedCourse.tenantId !== adminFull.tenantId) {
-                        throw new Error('Course tenant mismatch for this purchase');
-                    }
-                }
-
-                const enrollment = await tx.enrollment.create({
-                    data: {
-                        userId: newUser.id,
-                        courseId: selectedCourse.id,
-                        companyCoursePurchaseId: purchase.id,
-                        companyContextId: companyId,
-                        expiresAt: purchase.expiresAt,
-                        status: 'NOT_STARTED',
-                        accessLinkToken: randomBytes(24).toString('hex'),
-                        accessLinkExpiresAt: purchase.expiresAt,
-                        accessLinkUsed: false,
-                    },
-                    include: {
-                        course: { select: { id: true, courseTitle: true, slug: true } },
-                    },
-                });
-                enrollments.push(enrollment);
-            } else {
-                for (const course of courses) {
-                    const purchase = await this._reserveAnyPurchaseSeat(tx, { companyId, courseId: course.id });
-                    const enrollment = await tx.enrollment.create({
-                        data: {
-                            userId: newUser.id,
-                            courseId: course.id,
-                            companyCoursePurchaseId: purchase.id,
-                            companyContextId: companyId,
-                            expiresAt: purchase.expiresAt,
-                            status: 'NOT_STARTED',
-                            accessLinkToken: randomBytes(24).toString('hex'),
-                            accessLinkExpiresAt: purchase.expiresAt,
-                            accessLinkUsed: false,
-                        },
-                        include: {
-                            course: { select: { id: true, courseTitle: true, slug: true } },
-                        },
-                    });
-                    enrollments.push(enrollment);
-                }
-            }
+            const enrollments = await this._assignCoursesToUser(tx, {
+                userId: newUser.id,
+                companyId,
+                courseIds: requestedCourseIds,
+                companyCoursePurchaseId: data.companyCoursePurchaseId ?? null,
+                tenantId: adminFull?.tenantId ?? null,
+            });
 
             return { user: newUser, employee, enrollments };
         });
 
-        const courseList = result.enrollments.map(e => ({
-            title: e.course.courseTitle?.en
-                || e.course.courseTitle?.it
-                || (typeof e.course.courseTitle === 'object' ? Object.values(e.course.courseTitle)[0] : e.course.courseTitle)
-                || 'Course',
+        const courseList = result.enrollments.map((e) => ({
+            title: this._formatCourseTitle(e.course.courseTitle),
             slug: e.course.slug,
         }));
-
-        if (courseList.length === 0) {
-            courseList.push(...courses.map(c => ({
-                title: c.courseTitle?.en
-                    || c.courseTitle?.it
-                    || (typeof c.courseTitle === 'object' ? Object.values(c.courseTitle)[0] : c.courseTitle)
-                    || 'Course',
-                slug: c.slug,
-            })));
-        }
 
         let emailSent = false;
         try {
             const baseClientUrl = (config.CLIENT_URL || '').replace(/\/$/, '');
             const accessCourses = result.enrollments
-                .filter(e => e.accessLinkToken && baseClientUrl)
-                .map(e => ({
-                    title: e.course.courseTitle?.en
-                        || e.course.courseTitle?.it
-                        || (typeof e.course.courseTitle === 'object' ? Object.values(e.course.courseTitle)[0] : e.course.courseTitle)
-                        || 'Course',
+                .filter((e) => e.accessLinkToken && baseClientUrl)
+                .map((e) => ({
+                    title: this._formatCourseTitle(e.course.courseTitle),
                     accessUrl: `${baseClientUrl}/enrollments/access/${e.accessLinkToken}`,
                     expiresAt: e.accessLinkExpiresAt,
                 }));
@@ -274,28 +408,22 @@ class EmployeeService {
                 companyName: company.name,
                 courses: courseList,
                 accessCourses,
+                role: data.jobTitle ?? data.role ?? null,
+                employmentDate: data.employmentDate ?? result.employee.employmentDate,
             });
             emailSent = true;
-        } catch (emailErr) {
-
+        } catch (_emailErr) {
             emailSent = false;
         }
 
         return {
-            employee: {
-                id: result.employee.id,
-                userId: result.user.id,
-                email: result.user.email,
-                firstName: result.user.firstName,
-                lastName: result.user.lastName,
-                contactNumber: result.user.contactNumber,
-                birthDate: result.user.birthDate,
-                city: result.user.city,
-                traineeTaxCode: result.user.traineeTaxCode,
-                jobTitle: result.employee.jobTitle,
-            },
+            employee: this._mapEmployeeRecord(result.employee, result.user, result.enrollments),
             enrollments: result.enrollments,
             assignedCoursesCount: result.enrollments.length,
+            credentials: {
+                email: data.email,
+                temporaryPassword: plainPassword,
+            },
             emailSent,
         };
     }
@@ -320,10 +448,22 @@ class EmployeeService {
             ];
         }
 
+        if (queryParams.status) {
+            userWhere.status = queryParams.status;
+        }
+
+        const employeeOrderBy = queryParams.sortBy === 'employmentDate'
+            ? { employmentDate: queryParams.sortOrder === 'asc' ? 'asc' : 'desc' }
+            : queryParams.sortBy === 'firstName' || queryParams.sortBy === 'lastName'
+                ? { user: { [queryParams.sortBy]: queryParams.sortOrder === 'asc' ? 'asc' : 'desc' } }
+                : { createdAt: queryParams.sortOrder === 'asc' ? 'asc' : 'desc' };
+
+        const employeeWhere = { companyId, user: userWhere };
+
         const [employees, total] = await Promise.all([
             prisma.employee.findMany({
-                where: { companyId, user: userWhere },
-                orderBy: { createdAt: queryParams.sortOrder === 'asc' ? 'asc' : 'desc' },
+                where: employeeWhere,
+                orderBy: employeeOrderBy,
                 skip,
                 take: limit,
                 include: {
@@ -374,30 +514,18 @@ class EmployeeService {
                     },
                 },
             }),
-            prisma.employee.count({ where: { companyId } }),
+            prisma.employee.count({ where: employeeWhere }),
         ]);
 
         return {
             meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
-            employees: employees.map(emp => ({
-                id: emp.id,
-                userId: emp.user.id,
-                email: emp.user.email,
-                firstName: emp.user.firstName,
-                lastName: emp.user.lastName,
-                contactNumber: emp.user.contactNumber,
-                birthDate: emp.user.birthDate,
-                city: emp.user.city,
-                traineeTaxCode: emp.user.traineeTaxCode,
-                jobTitle: emp.jobTitle,
-                isActive: emp.user.isActive,
-                status: emp.user.status,
-                joinedAt: emp.createdAt,
+            employees: employees.map((emp) => ({
+                ...this._mapEmployeeRecord(emp, emp.user, emp.user.enrollments),
                 stats: {
                     totalEnrollments: emp.user._count.enrollments,
                     totalCertificates: emp.user._count.certificates,
-                    completedCourses: emp.user.enrollments.filter(e => e.status === 'COMPLETED').length,
-                    inProgressCourses: emp.user.enrollments.filter(e => e.status === 'IN_PROGRESS').length,
+                    completedCourses: emp.user.enrollments.filter((e) => e.status === 'COMPLETED').length,
+                    inProgressCourses: emp.user.enrollments.filter((e) => e.status === 'IN_PROGRESS').length,
                 },
                 enrollments: emp.user.enrollments,
             })),
@@ -520,36 +648,8 @@ class EmployeeService {
             };
         });
 
-        const totalCourses = courseDetails.length;
-        const completedCourses = courseDetails.filter(c => c.status === 'COMPLETED').length;
-        const avgProgress = totalCourses > 0
-            ? Math.round(courseDetails.reduce((s, c) => s + c.progress.percentage, 0) / totalCourses)
-            : 0;
-
         return {
-            employee: {
-                id: employee.id,
-                userId: employee.user.id,
-                email: employee.user.email,
-                firstName: employee.user.firstName,
-                lastName: employee.user.lastName,
-                contactNumber: employee.user.contactNumber,
-                birthDate: employee.user.birthDate,
-                city: employee.user.city,
-                traineeTaxCode: employee.user.traineeTaxCode,
-                jobTitle: employee.jobTitle,
-                isActive: employee.user.isActive,
-                joinedAt: employee.createdAt,
-            },
-            summary: {
-                totalCourses,
-                completedCourses,
-                inProgressCourses: courseDetails.filter(c => c.status === 'IN_PROGRESS').length,
-                notStartedCourses: courseDetails.filter(c => c.status === 'NOT_STARTED').length,
-                averageProgress: avgProgress,
-                totalQuizAttempts: courseDetails.reduce((s, c) => s + c.quizzes.totalAttempts, 0),
-                certificatesEarned: courseDetails.filter(c => c.certificate?.status === 'ISSUED').length,
-            },
+            employee: this._mapEmployeeRecord(employee, employee.user, employee.user.enrollments),
             courses: courseDetails,
         };
     }
@@ -559,15 +659,37 @@ class EmployeeService {
 
         const employee = await prisma.employee.findFirst({
             where: { userId: employeeUserId, companyId },
-            select: { id: true, userId: true },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                        firstName: true,
+                        lastName: true,
+                        tenantId: true,
+                    },
+                },
+                company: { select: { name: true } },
+            },
         });
         if (!employee) throw new Error('Employee not found in your company');
 
-        return prisma.$transaction(async (tx) => {
-            if (data.jobTitle !== undefined) {
+        let plainPassword = null;
+        if (data.password) {
+            plainPassword = data.password;
+        }
+
+        const result = await prisma.$transaction(async (tx) => {
+            const employeeUpdateData = {};
+            if (data.jobTitle !== undefined || data.role !== undefined) {
+                employeeUpdateData.jobTitle = data.jobTitle ?? data.role;
+            }
+            if (data.employmentDate !== undefined) employeeUpdateData.employmentDate = data.employmentDate;
+
+            if (Object.keys(employeeUpdateData).length > 0) {
                 await tx.employee.update({
                     where: { id: employee.id },
-                    data: { jobTitle: data.jobTitle },
+                    data: employeeUpdateData,
                 });
             }
 
@@ -578,9 +700,17 @@ class EmployeeService {
             if (data.birthDate !== undefined) userUpdateData.birthDate = data.birthDate;
             if (data.city !== undefined) userUpdateData.city = data.city;
             if (data.traineeTaxCode !== undefined) userUpdateData.traineeTaxCode = data.traineeTaxCode;
-            if (data.isActive !== undefined) {
+
+            if (data.status !== undefined) {
+                userUpdateData.status = data.status;
+                userUpdateData.isActive = data.status === 'ACTIVE';
+            } else if (data.isActive !== undefined) {
                 userUpdateData.isActive = data.isActive;
                 userUpdateData.status = data.isActive ? 'ACTIVE' : 'SUSPENDED';
+            }
+
+            if (plainPassword) {
+                userUpdateData.password = await bcrypt.hash(plainPassword, 10);
             }
 
             if (Object.keys(userUpdateData).length > 0) {
@@ -590,7 +720,15 @@ class EmployeeService {
                 });
             }
 
-            return tx.employee.findUnique({
+            const newEnrollments = await this._assignCoursesToUser(tx, {
+                userId: employee.userId,
+                companyId,
+                courseIds: data.courseIds ?? [],
+                companyCoursePurchaseId: data.companyCoursePurchaseId ?? null,
+                tenantId: employee.user.tenantId,
+            });
+
+            const updatedEmployee = await tx.employee.findUnique({
                 where: { id: employee.id },
                 include: {
                     user: {
@@ -605,11 +743,69 @@ class EmployeeService {
                             traineeTaxCode: true,
                             isActive: true,
                             status: true,
+                            enrollments: {
+                                select: {
+                                    id: true,
+                                    status: true,
+                                    course: {
+                                        select: {
+                                            id: true,
+                                            courseTitle: true,
+                                            slug: true,
+                                        },
+                                    },
+                                },
+                                orderBy: { createdAt: 'desc' },
+                            },
                         },
                     },
                 },
             });
+
+            return { updatedEmployee, newEnrollments };
         });
+
+        let emailSent = false;
+        try {
+            if (plainPassword || (result.newEnrollments?.length > 0)) {
+                const baseClientUrl = (config.CLIENT_URL || '').replace(/\/$/, '');
+                const accessCourses = (result.newEnrollments || [])
+                    .filter((e) => e.accessLinkToken && baseClientUrl)
+                    .map((e) => ({
+                        title: this._formatCourseTitle(e.course.courseTitle),
+                        accessUrl: `${baseClientUrl}/enrollments/access/${e.accessLinkToken}`,
+                        expiresAt: e.accessLinkExpiresAt,
+                    }));
+
+                await emailService.sendEmployeeUpdatedEmail({
+                    to: employee.user.email,
+                    firstName: result.updatedEmployee.user.firstName,
+                    lastName: result.updatedEmployee.user.lastName,
+                    companyName: employee.company.name,
+                    password: plainPassword,
+                    courses: (result.newEnrollments || []).map((e) => ({
+                        title: this._formatCourseTitle(e.course.courseTitle),
+                        slug: e.course.slug,
+                    })),
+                    accessCourses,
+                });
+                emailSent = true;
+            }
+        } catch (_emailErr) {
+            emailSent = false;
+        }
+
+        return {
+            employee: this._mapEmployeeRecord(
+                result.updatedEmployee,
+                result.updatedEmployee.user,
+                result.updatedEmployee.user.enrollments,
+            ),
+            newEnrollments: result.newEnrollments,
+            assignedCoursesCount: result.newEnrollments.length,
+            passwordUpdated: Boolean(plainPassword),
+            emailSent,
+        };
     }
 
     async removeEmployee(employeeUserId, adminUser) {

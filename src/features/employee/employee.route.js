@@ -11,6 +11,8 @@ router.use(i18nMiddleware);
 const companyAdminGuard = authMiddleware.authorize('COMPANY_ADMIN');
 
 router.post('/', companyAdminGuard, employeeController.addEmployee);
+router.get('/assignable-courses', companyAdminGuard, employeeController.getAssignableCourses);
+router.get('/role-suggestions', companyAdminGuard, employeeController.getRoleSuggestions);
 router.get('/', companyAdminGuard, employeeController.getCompanyEmployees);
 router.get('/:userId', companyAdminGuard, employeeController.getEmployeeDetail);
 router.patch('/:userId', companyAdminGuard, employeeController.updateEmployee);
