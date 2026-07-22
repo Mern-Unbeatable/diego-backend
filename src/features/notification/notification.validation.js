@@ -10,6 +10,14 @@ export const markReadSchema = z.object({
     notificationIds: z.array(z.string().uuid()).min(1).max(100),
 });
 
+export const deleteNotificationsSchema = z.object({
+    notificationIds: z.array(z.string().uuid()).min(1).max(100),
+});
+
+export const notificationIdParamSchema = z.object({
+    notificationId: z.string().uuid('Invalid notification ID'),
+});
+
 export const updateAlertOptOutSchema = z.object({
     alertsOptOut: z.boolean(),
 });

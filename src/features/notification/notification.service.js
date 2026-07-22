@@ -898,6 +898,29 @@ class NotificationService {
         return this.markAllAsRead(userId);
     }
 
+    async deleteNotification(notificationId, userId) {
+        const notification = await prisma.notification.findUnique({
+            where: { id: notificationId },
+            select: { id: true, userId: true },
+        });
+
+        if (!notification) throw new Error('Notification not found');
+        if (notification.userId !== userId) throw new Error('Permission denied');
+
+        await prisma.notification.delete({ where: { id: notificationId } });
+        return { deleted: 1 };
+    }
+
+    async deleteNotifications(notificationIds, userId) {
+        const ids = Array.isArray(notificationIds) ? notificationIds : [notificationIds];
+
+        const result = await prisma.notification.deleteMany({
+            where: { id: { in: ids }, userId },
+        });
+
+        return { deleted: result.count };
+    }
+
     async notifyCertificateReady({
         userId,
         courseTitle,

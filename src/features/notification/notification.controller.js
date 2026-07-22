@@ -4,6 +4,8 @@ import { notificationService } from './notification.service.js';
 import {
     notificationQuerySchema,
     markReadSchema,
+    deleteNotificationsSchema,
+    notificationIdParamSchema,
     updateAlertOptOutSchema,
     createNotificationSchema,
     triggerJobSchema,
@@ -89,6 +91,34 @@ class NotificationController {
         ResponseHandler.updated(res, {
             message: 'All notifications marked as read',
             data: { updated: result.count },
+        });
+    });
+
+    deleteNotification = catchAsync(async (req, res) => {
+        const { notificationId } = notificationIdParamSchema.parse(req.params);
+
+        const result = await notificationService.deleteNotification(
+            notificationId,
+            req.user.id,
+        );
+
+        ResponseHandler.deleted(res, {
+            message: 'Notification deleted successfully',
+            data: result,
+        });
+    });
+
+    deleteNotifications = catchAsync(async (req, res) => {
+        const { notificationIds } = deleteNotificationsSchema.parse(req.body);
+
+        const result = await notificationService.deleteNotifications(
+            notificationIds,
+            req.user.id,
+        );
+
+        ResponseHandler.deleted(res, {
+            message: `${result.deleted} notification(s) deleted successfully`,
+            data: result,
         });
     });
 

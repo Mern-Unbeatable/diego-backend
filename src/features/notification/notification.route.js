@@ -16,6 +16,8 @@ router.get('/unread-count', notificationController.getUnreadCount);
 
 router.patch('/mark-read', notificationController.markRead);
 router.patch('/mark-all-read', notificationController.markAllRead);
+router.delete('/', notificationController.deleteNotifications);
+router.delete('/:notificationId', notificationController.deleteNotification);
 router.patch('/alert-preference', notificationController.updateAlertPreference);
 const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN');
 router.post('/admin/create', adminGuard, notificationController.createNotification);
