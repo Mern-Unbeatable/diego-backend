@@ -31,12 +31,13 @@ class CertificateController {
     });
 
     getArchivePlan = catchAsync(async (req, res) => {
-        const status = await certificateService.getArchiveStatus(req.user.id, req.locale);
+        const status = await certificateService.getArchiveStatus(req.user.id);
         ResponseHandler.success(res, {
             message: 'Archive plan fetched',
             data: status,
         });
     });
+
 
     getAllCertificates = catchAsync(async (req, res) => {
         const query = certificateQuerySchema.parse(req.query);
