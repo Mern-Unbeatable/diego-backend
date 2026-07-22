@@ -24,6 +24,7 @@ import { contactRoutes } from '../features/contact/contact.route.js';
 import { collaborationRoutes } from '../features/collaboration/collaboration.route.js';
 import { courseReviewRoutes } from '../features/courseReview/courseReview.route.js';
 import { coursePackageRoutes } from '../features/coursePackage/coursePackage.route.js';
+import { courseFavoriteRoutes } from '../features/courseFavorite/courseFavorite.route.js';
 import { packageRoutes } from '../features/package/package.route.js';
 import { platformSettingRoutes } from '../features/platformSetting/platformSetting.route.js';
 
@@ -56,6 +57,7 @@ export default (app) => {
   app.use(`${BASE_PATH}/contacts`, contactRoutes);
   app.use(`${BASE_PATH}/collaborations`, collaborationRoutes);
   app.use(`${BASE_PATH}/course-packages`, coursePackageRoutes);
+  app.use(`${BASE_PATH}/favorite-courses`, courseFavoriteRoutes);
   app.use(`${BASE_PATH}/packages`, packageRoutes);
   app.use(`${BASE_PATH}/platform-settings`, platformSettingRoutes);
 };
