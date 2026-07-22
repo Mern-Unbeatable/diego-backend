@@ -1,0 +1,393 @@
+{
+  "info": {
+    "name": "LMS - Full Course Test Flow",
+    "description": "Programming Hero style video course + SCORM safety course. Import this collection, set variables, run in order.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_api", "value": "http://localhost:5000/api/v1" },
+    { "key": "admin_token", "value": "" },
+    { "key": "student_token", "value": "" },
+    { "key": "tenantId", "value": "" },
+    { "key": "courseId", "value": "" },
+    { "key": "lessonId", "value": "" },
+    { "key": "lessonId_2", "value": "" },
+    { "key": "quizId", "value": "" },
+    { "key": "enrollmentId", "value": "" },
+    { "key": "session_id", "value": "" },
+    { "key": "payment_intent_id", "value": "" },
+    { "key": "scormSessionId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1 - Admin: Create Web Bootcamp Course",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"courseTitle\": {\n    \"en\": \"Complete Web Development Bootcamp\",\n    \"it\": \"Bootcamp Completo di Sviluppo Web\"\n  },\n  \"slug\": \"web-dev-bootcamp-2026\",\n  \"category\": \"CATALOG\",\n  \"format\": \"VIDEO_RECORDED\",\n  \"navigationMode\": \"SEQUENTIAL\",\n  \"description\": {\n    \"en\": \"Learn HTML, CSS, JavaScript, React from zero.\",\n    \"it\": \"Impara HTML, CSS, JavaScript, React da zero.\"\n  },\n  \"durationMinutes\": 1200,\n  \"validityDays\": 365,\n  \"passScorePercent\": 80,\n  \"price\": 49.99,\n  \"basePrice\": 49.99,\n  \"isActive\": true,\n  \"isB2BOnly\": false,\n  \"tenantId\": \"{{tenantId}}\"\n}"
+        },
+        "url": "{{base_api}}/courses"
+      }
+    },
+    {
+      "name": "2 - Admin: Add Lesson 1 (YouTube Intro)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 1: What is Web Development?\", \"it\": \"Modulo 1: Cos'è lo sviluppo web?\" },\n  \"orderIndex\": 0,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=UB1O30fR-EE\",\n  \"durationSecs\": 600,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "3 - Admin: Add Lesson 2 (HTML)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 2: HTML Fundamentals\", \"it\": \"Modulo 2: Fondamenti HTML\" },\n  \"orderIndex\": 1,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=qz0aGYrrlhU\",\n  \"durationSecs\": 900,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "4 - Admin: Add Lesson 3 (CSS)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 3: CSS Basics\", \"it\": \"Modulo 3: CSS Base\" },\n  \"orderIndex\": 2,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=1Rs2ND1ryYc\",\n  \"durationSecs\": 1200,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "5 - Admin: Add Lesson 4 (JavaScript)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 4: JavaScript Variables\", \"it\": \"Modulo 4: Variabili JavaScript\" },\n  \"orderIndex\": 3,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=W6NZfCO5SIk\",\n  \"durationSecs\": 1100,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "6 - Admin: Add Lesson 5 (Functions)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 5: JavaScript Functions\", \"it\": \"Modulo 5: Funzioni JavaScript\" },\n  \"orderIndex\": 4,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=N8ap4k_4RwY\",\n  \"durationSecs\": 1000,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "7 - Admin: Add Lesson 6 (DOM)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 6: DOM Manipulation\", \"it\": \"Modulo 6: Manipolazione DOM\" },\n  \"orderIndex\": 5,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=y17RuWkWdn8\",\n  \"durationSecs\": 1300,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "8 - Admin: Add Lesson 7 (React Intro)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 7: React Introduction\", \"it\": \"Modulo 7: Introduzione React\" },\n  \"orderIndex\": 6,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=SqcY0GVwsCY\",\n  \"durationSecs\": 1400,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "9 - Admin: Add Lesson 8 (React Components)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 8: React Components\", \"it\": \"Modulo 8: Componenti React\" },\n  \"orderIndex\": 7,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=Rh3TYjpzXgY\",\n  \"durationSecs\": 1500,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "10 - Admin: Add Lesson 9 (Uploaded Video)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 9: Final Project Walkthrough\", \"it\": \"Modulo 9: Progetto Finale\" },\n  \"orderIndex\": 8,\n  \"contentType\": \"VIDEO_UPLOAD\",\n  \"contentUrl\": \"https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4\",\n  \"durationSecs\": 1800,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "11 - Admin: Add Lesson 10 (PDF Cheat Sheet)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 10: Course Cheat Sheet PDF\", \"it\": \"Modulo 10: PDF riassuntivo\" },\n  \"orderIndex\": 9,\n  \"contentType\": \"PDF\",\n  \"contentUrl\": \"https://www.w3.org/WAI/WCAG21/Techniques/pdf/img/table.pdf\",\n  \"durationSecs\": 300,\n  \"isRequired\": false\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "12 - Admin: List All Lessons",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ],
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "13 - Admin: Create Final Quiz",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"quizTitle\": { \"en\": \"Final Web Development Assessment\", \"it\": \"Valutazione Finale\" },\n  \"quizType\": \"FINAL_TEST\",\n  \"passScorePercent\": 80,\n  \"maxAttempts\": 3,\n  \"isActive\": true,\n  \"questions\": [\n    {\n      \"en\": {\n        \"question\": \"What does HTML stand for?\",\n        \"options\": [\"Hyper Text Markup Language\", \"High Tech Modern Language\", \"Home Tool Markup Language\"],\n        \"correctAnswer\": 0,\n        \"points\": 20\n      }\n    },\n    {\n      \"en\": {\n        \"question\": \"Which tag is used for the largest heading?\",\n        \"options\": [\"<h1>\", \"<head>\", \"<header>\"],\n        \"correctAnswer\": 0,\n        \"points\": 20\n      }\n    },\n    {\n      \"en\": {\n        \"question\": \"Which hook is used for state in React?\",\n        \"options\": [\"useState\", \"useEffect\", \"useContext\"],\n        \"correctAnswer\": 0,\n        \"points\": 20\n      }\n    },\n    {\n      \"en\": {\n        \"question\": \"CSS Flexbox is mainly used for?\",\n        \"options\": [\"Layout\", \"Database\", \"Authentication\"],\n        \"correctAnswer\": 0,\n        \"points\": 20\n      }\n    },\n    {\n      \"en\": {\n        \"question\": \"JavaScript is primarily a?\",\n        \"options\": [\"Programming language\", \"Markup language\", \"Database\"],\n        \"correctAnswer\": 0,\n        \"points\": 20\n      }\n    }\n  ]\n}"
+        },
+        "url": "{{base_api}}/quizzes/{{courseId}}"
+      }
+    },
+    {
+      "name": "14 - Admin: Publish Quiz",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"isPublished\": true\n}"
+        },
+        "url": "{{base_api}}/quizzes/{{quizId}}/publish"
+      }
+    },
+    {
+      "name": "15 - Student: Checkout Course (Stripe Redirect)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"courseId\": \"{{courseId}}\"\n}"
+        },
+        "url": "{{base_api}}/payments/checkout/course"
+      }
+    },
+    {
+      "name": "16 - Student: Payment Intent (Embedded UI)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"courseId\": \"{{courseId}}\"\n}"
+        },
+        "url": "{{base_api}}/payments/intent/course"
+      }
+    },
+    {
+      "name": "17 - Student: Verify Payment (Checkout)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" }
+        ],
+        "url": "{{base_api}}/payments/verify?session_id={{session_id}}"
+      }
+    },
+    {
+      "name": "18 - Student: Verify Payment (Intent)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" }
+        ],
+        "url": "{{base_api}}/payments/intent/course/verify?payment_intent_id={{payment_intent_id}}"
+      }
+    },
+    {
+      "name": "19 - Student: My Enrollments",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" }
+        ],
+        "url": "{{base_api}}/enrollments/my"
+      }
+    },
+    {
+      "name": "20 - Student: Course Progress",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" }
+        ],
+        "url": "{{base_api}}/courses/{{courseId}}/lessons/progress"
+      }
+    },
+    {
+      "name": "21 - Student: Complete Lesson 1",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 600\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId}}/progress"
+      }
+    },
+    {
+      "name": "22 - Student: Complete Lesson 2",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 900\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_2}}/progress"
+      }
+    },
+    {
+      "name": "23 - Student: Start Quiz",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" }
+        ],
+        "url": "{{base_api}}/quizzes/{{courseId}}/start-quiz/{{quizId}}"
+      }
+    },
+    {
+      "name": "24 - Student: Submit Quiz",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"answers\": [\n    { \"questionIndex\": 0, \"selectedOption\": 0 },\n    { \"questionIndex\": 1, \"selectedOption\": 0 },\n    { \"questionIndex\": 2, \"selectedOption\": 0 },\n    { \"questionIndex\": 3, \"selectedOption\": 0 },\n    { \"questionIndex\": 4, \"selectedOption\": 0 }\n  ]\n}"
+        },
+        "url": "{{base_api}}/quizzes/{{courseId}}/submit/{{quizId}}"
+      }
+    },
+    {
+      "name": "25 - Student: My Certificates",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" }
+        ],
+        "url": "{{base_api}}/certificates/my"
+      }
+    },
+    {
+      "name": "SCORM - Launch",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"enrollmentId\": \"{{enrollmentId}}\",\n  \"lessonId\": \"{{lessonId}}\"\n}"
+        },
+        "url": "{{base_api}}/scorm/launch"
+      }
+    },
+    {
+      "name": "SCORM - Finish",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{scormSessionId}}\",\n  \"cmiData\": {\n    \"cmi.core.lesson_status\": \"completed\",\n    \"cmi.core.score.raw\": \"85\"\n  }\n}"
+        },
+        "url": "{{base_api}}/scorm/finish"
+      }
+    }
+  ]
+}

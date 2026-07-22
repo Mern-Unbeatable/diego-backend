@@ -1337,6 +1337,277 @@ class PaymentService {
     return { paid: true, archiveSubscription: subscription, payment };
   }
 
+  _paymentIntentResponse(paymentIntent, payment, extra = {}) {
+    return {
+      type: 'PAYMENT_INTENT',
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+      publishableKey: config.STRIPE_PUBLISHABLE_KEY || null,
+      amount: payment.amount,
+      currency: payment.currency,
+      paymentId: payment.id,
+      ...extra,
+    };
+  }
+
+  async createCoursePaymentIntent({ userId, courseId, couponCode = null }) {
+    await this._assertPaymentProcessingEnabled();
+
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, tenantId: true } });
+    if (!user) throw new Error('User not found');
+
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { id: true, courseTitle: true, slug: true, price: true, basePrice: true, isActive: true, validityDays: true, tenantId: true },
+    });
+    if (!course) throw new Error('Course not found');
+    if (!course.isActive) throw new Error('Course is not active');
+
+    const existingEnrollment = await prisma.enrollment.findUnique({
+      where: { userId_courseId: { userId, courseId } },
+      select: { id: true, status: true },
+    });
+    if (existingEnrollment) {
+      throw new Error(existingEnrollment.status === 'COMPLETED'
+        ? 'You have already completed this course'
+        : 'You are already enrolled in this course');
+    }
+
+    const coupon = await this._resolveCoupon(couponCode, course.tenantId);
+    const originalPrice = Number.isFinite(course.basePrice) && course.basePrice > 0 ? course.basePrice : course.price;
+    const finalPrice = this._applyDiscount(originalPrice, coupon);
+    const courseTitle = course.courseTitle?.en || course.courseTitle?.it || Object.values(course.courseTitle || {})[0] || 'Course';
+
+    if (finalPrice <= 0) {
+      const freeResult = await this.createCourseCheckout({ userId, courseId, couponCode });
+      return { ...freeResult, flow: 'FREE_ENROLLMENT' };
+    }
+
+    const stripeCustomerId = await this._getOrCreateStripeCustomer(userId);
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(finalPrice * 100),
+      currency: 'eur',
+      customer: stripeCustomerId,
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        userId,
+        courseId,
+        type: 'SINGLE_COURSE',
+        couponId: coupon?.id ?? '',
+        tenantId: course.tenantId ?? '',
+      },
+      description: `${courseTitle} — Course enrollment`,
+    });
+
+    const payment = await prisma.payment.create({
+      data: {
+        userId,
+        type: 'SINGLE_COURSE',
+        status: 'PENDING',
+        amount: finalPrice,
+        currency: 'EUR',
+        stripePaymentIntentId: paymentIntent.id,
+        stripeCustomerId,
+        tenantId: course.tenantId,
+        ...(coupon && { couponId: coupon.id }),
+      },
+    });
+
+    return this._paymentIntentResponse(paymentIntent, payment, {
+      originalPrice,
+      finalPrice,
+      discount: originalPrice - finalPrice,
+      courseId,
+      courseTitle,
+    });
+  }
+
+  async verifyCoursePaymentIntent(paymentIntentId, userId) {
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (paymentIntent.status !== 'succeeded') {
+      return { paid: false, message: `Payment status: ${paymentIntent.status}` };
+    }
+
+    const metadata = paymentIntent.metadata || {};
+    const sessionType = this._pickMetadataValue(metadata, ['type']);
+    if (sessionType && sessionType !== 'SINGLE_COURSE') {
+      throw new Error(`Invalid payment intent type for this endpoint: ${sessionType}`);
+    }
+
+    const intentUserId = this._pickMetadataValue(metadata, ['userId']);
+    if (intentUserId && intentUserId !== userId) {
+      throw new Error('Permission denied: this payment does not belong to you');
+    }
+
+    const courseId = this._pickMetadataValue(metadata, ['courseId']);
+    const couponId = this._pickMetadataValue(metadata, ['couponId', 'coupon_id']);
+    if (!courseId) throw new Error('Missing courseId in payment intent metadata');
+
+    const updateResult = await prisma.payment.updateMany({
+      where: { stripePaymentIntentId: paymentIntentId, userId, status: 'PENDING' },
+      data: { status: 'SUCCESS' },
+    });
+
+    if (updateResult.count === 0) {
+      const enrollment = await prisma.enrollment.findUnique({
+        where: { userId_courseId: { userId, courseId } },
+        include: { course: { select: { id: true, slug: true, courseTitle: true } } },
+      });
+      return { paid: true, alreadyProcessed: true, enrollment };
+    }
+
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { id: true, validityDays: true, isActive: true },
+    });
+    if (!course || !course.isActive) throw new Error('Course not found or inactive');
+
+    const existingEnrollment = await prisma.enrollment.findUnique({
+      where: { userId_courseId: { userId, courseId } },
+      select: { id: true },
+    });
+    if (existingEnrollment) {
+      return { paid: true, alreadyProcessed: false, enrollment: existingEnrollment };
+    }
+
+    const payment = await prisma.payment.findFirst({
+      where: { stripePaymentIntentId: paymentIntentId, userId },
+      select: { id: true, amount: true },
+    });
+    if (!payment) throw new Error('Payment record not found for this payment intent');
+
+    const expiresAt = addDays(new Date(), course.validityDays || 90);
+    const enrollment = await prisma.$transaction(async (tx) => {
+      const newEnrollment = await tx.enrollment.create({
+        data: { courseId, userId, expiresAt, status: 'NOT_STARTED' },
+        include: { course: { select: { id: true, slug: true, courseTitle: true, tenantId: true } } },
+      });
+      await tx.payment.updateMany({
+        where: { stripePaymentIntentId: paymentIntentId, userId },
+        data: { enrollmentId: newEnrollment.id },
+      });
+      if (couponId) {
+        await tx.coupon.update({ where: { id: couponId }, data: { usedCount: { increment: 1 } } });
+      }
+      await this._recordLicenseIncomeForCoursePayment(tx, {
+        paymentId: payment.id,
+        courseId,
+        grossAmount: payment.amount,
+      });
+      return newEnrollment;
+    });
+
+    return { paid: true, alreadyProcessed: false, enrollment };
+  }
+
+  async createArchivePaymentIntent({ userId, tenantId = null }) {
+    await this._assertPaymentProcessingEnabled();
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, level: true, tenantId: true },
+    });
+    if (!user) throw new Error('User not found');
+
+    const allowedLevels = ['PRIVATE_USER', 'COMPANY_EMPLOYEE', 'COMPANY_ADMIN'];
+    if (!allowedLevels.includes(user.level)) {
+      throw new Error('Archive storage is available for private and company users only');
+    }
+
+    const archivePlan = await platformSettingService.getCertificateArchivePlan();
+    if (!archivePlan.enabled) {
+      throw new Error('Certificate archive storage is currently unavailable');
+    }
+
+    const finalPrice = archivePlan.priceEur;
+    const effectiveTenantId = tenantId || user.tenantId || null;
+    const stripeCustomerId = await this._getOrCreateStripeCustomer(userId);
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(finalPrice * 100),
+      currency: archivePlan.currency.toLowerCase(),
+      customer: stripeCustomerId,
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        userId,
+        type: 'ARCHIVE_STORAGE',
+        tenantId: effectiveTenantId ?? '',
+      },
+      description: `${archivePlan.name} (${archivePlan.durationDays} days)`,
+    });
+
+    const payment = await prisma.payment.create({
+      data: {
+        userId,
+        type: 'ARCHIVE_STORAGE',
+        status: 'PENDING',
+        amount: finalPrice,
+        currency: archivePlan.currency,
+        stripePaymentIntentId: paymentIntent.id,
+        stripeCustomerId,
+        tenantId: effectiveTenantId,
+      },
+    });
+
+    return this._paymentIntentResponse(paymentIntent, payment, {
+      plan: archivePlan,
+    });
+  }
+
+  async verifyArchivePaymentIntent(paymentIntentId, userId) {
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (paymentIntent.status !== 'succeeded') {
+      return { paid: false, message: `Payment status: ${paymentIntent.status}` };
+    }
+
+    const intentUserId = this._pickMetadataValue(paymentIntent.metadata || {}, ['userId']);
+    if (intentUserId && intentUserId !== userId) {
+      throw new Error('Permission denied: this payment does not belong to you');
+    }
+
+    const updateResult = await prisma.payment.updateMany({
+      where: { stripePaymentIntentId: paymentIntentId, userId, status: 'PENDING' },
+      data: { status: 'SUCCESS' },
+    });
+
+    const payment = await prisma.payment.findFirst({
+      where: { stripePaymentIntentId: paymentIntentId, userId },
+    });
+    if (!payment) throw new Error('Payment record not found');
+
+    if (updateResult.count === 0) {
+      const sub = await prisma.archiveSubscription.findUnique({ where: { userId } });
+      return { paid: true, alreadyProcessed: true, archiveSubscription: sub };
+    }
+
+    const tenantId = paymentIntent.metadata?.tenantId || payment.tenantId || null;
+    const subscription = await activateArchiveSubscription(userId, payment.id, tenantId || null);
+
+    log.info(`Archive subscription activated via payment intent for user ${userId}`);
+    return { paid: true, archiveSubscription: subscription, payment };
+  }
+
+  async _handlePaymentIntentSucceeded(paymentIntent) {
+    const metadata = paymentIntent.metadata || {};
+    const type = this._pickMetadataValue(metadata, ['type']);
+    const userId = this._pickMetadataValue(metadata, ['userId']);
+    if (!userId) {
+      log.warn(`payment_intent.succeeded without userId: ${paymentIntent.id}`);
+      return;
+    }
+
+    switch (type) {
+      case 'SINGLE_COURSE':
+        await this.verifyCoursePaymentIntent(paymentIntent.id, userId);
+        break;
+      case 'ARCHIVE_STORAGE':
+        await this.verifyArchivePaymentIntent(paymentIntent.id, userId);
+        break;
+      default:
+        log.warn(`payment_intent.succeeded unrecognized type "${type}" for ${paymentIntent.id}`);
+    }
+  }
+
   async handleWebhook(rawBody, signature) {
     let event;
     try {
@@ -1394,6 +1665,23 @@ class PaymentService {
       const session = event.data.object;
       await prisma.payment.updateMany({
         where: { stripeSessionId: session.id, status: 'PENDING' },
+        data: { status: 'FAILED' },
+      });
+    }
+
+    if (event.type === 'payment_intent.succeeded') {
+      const paymentIntent = event.data.object;
+      try {
+        await this._handlePaymentIntentSucceeded(paymentIntent);
+      } catch (err) {
+        log.error(`Webhook payment_intent.succeeded failed (${paymentIntent.id}): ${err.message}`);
+      }
+    }
+
+    if (event.type === 'payment_intent.payment_failed') {
+      const paymentIntent = event.data.object;
+      await prisma.payment.updateMany({
+        where: { stripePaymentIntentId: paymentIntent.id, status: 'PENDING' },
         data: { status: 'FAILED' },
       });
     }

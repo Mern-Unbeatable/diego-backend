@@ -1,0 +1,57 @@
+{
+  "course": {
+    "courseTitle": {
+      "en": "Workplace Safety Training",
+      "it": "Formazione Sicurezza sul Lavoro"
+    },
+    "slug": "workplace-safety-2026",
+    "category": "MANDATORY",
+    "format": "SCORM",
+    "navigationMode": "SEQUENTIAL",
+    "description": {
+      "en": "Mandatory workplace safety course for all employees.",
+      "it": "Corso obbligatorio di sicurezza sul lavoro per tutti i dipendenti."
+    },
+    "durationMinutes": 180,
+    "validityDays": 90,
+    "passScorePercent": 80,
+    "price": 20,
+    "basePrice": 20,
+    "isActive": true,
+    "isB2BOnly": false,
+    "tenantId": "{{tenantId}}"
+  },
+  "lessons": [
+    {
+      "title": { "en": "Safety Module 1: Fire Prevention", "it": "Modulo 1: Prevenzione incendi" },
+      "orderIndex": 0,
+      "contentType": "SCORM",
+      "scormPackageUrl": "https://your-server.com/scorm/safety-module-1.zip",
+      "scormVersion": "1.2",
+      "scormEntryPoint": "index_lms.html",
+      "durationSecs": 1800,
+      "isRequired": true,
+      "isLocked": false
+    },
+    {
+      "title": { "en": "Safety Module 2: Emergency Procedures", "it": "Modulo 2: Procedure di emergenza" },
+      "orderIndex": 1,
+      "contentType": "SCORM_12",
+      "scormPackageUrl": "https://your-server.com/scorm/safety-module-2.zip",
+      "scormVersion": "1.2",
+      "scormEntryPoint": "story.html",
+      "durationSecs": 1200,
+      "isRequired": true,
+      "isLocked": false
+    },
+    {
+      "title": { "en": "Safety Regulations PDF", "it": "PDF Regolamento sicurezza" },
+      "orderIndex": 2,
+      "contentType": "PDF",
+      "contentUrl": "https://www.w3.org/WAI/WCAG21/Techniques/pdf/img/table.pdf",
+      "durationSecs": 600,
+      "isRequired": true,
+      "isLocked": false
+    }
+  ]
+}

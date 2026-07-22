@@ -9,6 +9,14 @@ export const verifyPaymentSchema = z.object({
   sessionId: z.string().min(1, 'Session ID is required'),
 });
 
+export const verifyPaymentIntentSchema = z.object({
+  payment_intent_id: z.string().min(1).optional(),
+  paymentIntentId: z.string().min(1).optional(),
+}).refine(
+  (data) => Boolean(data.payment_intent_id || data.paymentIntentId),
+  { message: 'payment_intent_id is required' },
+);
+
 export const paymentQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),

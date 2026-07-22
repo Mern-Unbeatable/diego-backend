@@ -8,6 +8,7 @@ import {
   companyCourseCheckoutSchema,
   courseRenewalCheckoutSchema,
   companyCourseRenewalCheckoutSchema,
+  verifyPaymentIntentSchema,
 } from './payment.validation.js';
 
 class PaymentController {
@@ -46,6 +47,42 @@ class PaymentController {
     if (!sessionId) throw new Error('session_id is required');
 
     const result = await paymentService.verifyAndEnroll(sessionId, userId);
+
+    ResponseHandler.success(res, {
+      message: result.paid ? 'Payment verified and enrollment created' : 'Payment not completed yet',
+      data: result,
+    });
+  });
+
+  createCoursePaymentIntent = catchAsync(async (req, res) => {
+    const { courseId, couponCode } = createCourseCheckoutSchema.parse(req.body);
+    const userId = req.user.id;
+    this.log.info(`Course payment intent: user=${userId} course=${courseId}`);
+
+    const result = await paymentService.createCoursePaymentIntent({ userId, courseId, couponCode });
+
+    if (result.type === 'FREE' || result.flow === 'FREE_ENROLLMENT') {
+      return ResponseHandler.created(res, {
+        message: result.message || 'Successfully enrolled in free course',
+        data: result,
+      });
+    }
+
+    ResponseHandler.created(res, {
+      message: 'Payment intent created',
+      data: result,
+    });
+  });
+
+  verifyCoursePaymentIntent = catchAsync(async (req, res) => {
+    const parsed = verifyPaymentIntentSchema.parse({
+      payment_intent_id: req.query.payment_intent_id || req.body?.payment_intent_id,
+      paymentIntentId: req.query.paymentIntentId || req.body?.paymentIntentId,
+    });
+    const paymentIntentId = parsed.payment_intent_id || parsed.paymentIntentId;
+    const userId = req.user.id;
+
+    const result = await paymentService.verifyCoursePaymentIntent(paymentIntentId, userId);
 
     ResponseHandler.success(res, {
       message: result.paid ? 'Payment verified and enrollment created' : 'Payment not completed yet',
@@ -186,6 +223,35 @@ class PaymentController {
     if (!sessionId) throw new Error('session_id is required');
 
     const result = await paymentService.verifyArchivePayment(sessionId, userId);
+
+    ResponseHandler.success(res, {
+      message: result.paid ? 'Archive storage activated' : 'Payment not completed yet',
+      data: result,
+    });
+  });
+
+  createArchivePaymentIntent = catchAsync(async (req, res) => {
+    const userId = req.user.id;
+    const tenantId = req.tenantId || req.user.tenantId || null;
+    this.log.info(`Archive payment intent: user=${userId}`);
+
+    const result = await paymentService.createArchivePaymentIntent({ userId, tenantId });
+
+    ResponseHandler.created(res, {
+      message: 'Archive payment intent created',
+      data: result,
+    });
+  });
+
+  verifyArchivePaymentIntent = catchAsync(async (req, res) => {
+    const parsed = verifyPaymentIntentSchema.parse({
+      payment_intent_id: req.query.payment_intent_id || req.body?.payment_intent_id,
+      paymentIntentId: req.query.paymentIntentId || req.body?.paymentIntentId,
+    });
+    const paymentIntentId = parsed.payment_intent_id || parsed.paymentIntentId;
+    const userId = req.user.id;
+
+    const result = await paymentService.verifyArchivePaymentIntent(paymentIntentId, userId);
 
     ResponseHandler.success(res, {
       message: result.paid ? 'Archive storage activated' : 'Payment not completed yet',

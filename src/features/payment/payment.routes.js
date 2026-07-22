@@ -11,6 +11,8 @@ router.use(authMiddleware.protect);
 // ── Single course ──
 router.post('/checkout/course', paymentController.createCourseCheckout);
 router.get('/verify', paymentController.verifyAndEnroll);
+router.post('/intent/course', paymentController.createCoursePaymentIntent);
+router.get('/intent/course/verify', paymentController.verifyCoursePaymentIntent);
 
 // ── Company corporate course — first purchase ──
 const companyGuard = authMiddleware.authorize('COMPANY_ADMIN', 'PLATFORM_ADMIN');
@@ -32,5 +34,7 @@ router.get('/admin/all', adminGuard, paymentController.getAllPayments);
 
 router.post('/checkout/archive', paymentController.createArchiveCheckout);
 router.get('/verify/archive', paymentController.verifyArchivePayment);
+router.post('/intent/archive', paymentController.createArchivePaymentIntent);
+router.get('/intent/archive/verify', paymentController.verifyArchivePaymentIntent);
 
 export const paymentRoutes = router;

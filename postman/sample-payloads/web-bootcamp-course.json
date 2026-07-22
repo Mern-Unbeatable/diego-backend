@@ -1,0 +1,189 @@
+{
+  "course": {
+    "courseTitle": {
+      "en": "Complete Web Development Bootcamp",
+      "it": "Bootcamp Completo di Sviluppo Web"
+    },
+    "slug": "web-dev-bootcamp-2026",
+    "category": "CATALOG",
+    "format": "VIDEO_RECORDED",
+    "navigationMode": "SEQUENTIAL",
+    "description": {
+      "en": "Programming Hero style course.",
+      "it": "Corso stile Programming Hero."
+    },
+    "durationMinutes": 1200,
+    "validityDays": 365,
+    "passScorePercent": 80,
+    "price": 0,
+    "basePrice": 0,
+    "isActive": true,
+    "tenantId": "{{tenantId}}"
+  },
+  "lessons": [
+    {
+      "title": { "en": "Module 1: What is Web Development?", "it": "Modulo 1: Cos'è lo sviluppo web?" },
+      "orderIndex": 0,
+      "contentType": "VIDEO_YOUTUBE",
+      "youtubeUrl": "https://www.youtube.com/watch?v=UB1O30fR-EE",
+      "durationSecs": 600,
+      "isRequired": true
+    },
+    {
+      "title": { "en": "Module 2: HTML Fundamentals", "it": "Modulo 2: Fondamenti HTML" },
+      "orderIndex": 1,
+      "contentType": "VIDEO_YOUTUBE",
+      "youtubeUrl": "https://www.youtube.com/watch?v=qz0aGYrrlhU",
+      "durationSecs": 900,
+      "isRequired": true
+    },
+    {
+      "title": { "en": "Module 3: CSS Basics", "it": "Modulo 3: CSS Base" },
+      "orderIndex": 2,
+      "contentType": "VIDEO_YOUTUBE",
+      "youtubeUrl": "https://www.youtube.com/watch?v=1Rs2ND1ryYc",
+      "durationSecs": 1200,
+      "isRequired": true
+    },
+    {
+      "title": { "en": "Module 4: JavaScript Variables", "it": "Modulo 4: Variabili JavaScript" },
+      "orderIndex": 3,
+      "contentType": "VIDEO_YOUTUBE",
+      "youtubeUrl": "https://www.youtube.com/watch?v=W6NZfCO5SIk",
+      "durationSecs": 1100,
+      "isRequired": true
+    },
+    {
+      "title": { "en": "Module 5: JavaScript Functions", "it": "Modulo 5: Funzioni JavaScript" },
+      "orderIndex": 4,
+      "contentType": "VIDEO_YOUTUBE",
+      "youtubeUrl": "https://www.youtube.com/watch?v=N8ap4k_4RwY",
+      "durationSecs": 1000,
+      "isRequired": true
+    },
+    {
+      "title": { "en": "Module 6: DOM Manipulation", "it": "Modulo 6: Manipolazione DOM" },
+      "orderIndex": 5,
+      "contentType": "VIDEO_YOUTUBE",
+      "youtubeUrl": "https://www.youtube.com/watch?v=y17RuWkWdn8",
+      "durationSecs": 1300,
+      "isRequired": true
+    },
+    {
+      "title": { "en": "Module 7: React Introduction", "it": "Modulo 7: Introduzione React" },
+      "orderIndex": 6,
+      "contentType": "VIDEO_YOUTUBE",
+      "youtubeUrl": "https://www.youtube.com/watch?v=SqcY0GVwsCY",
+      "durationSecs": 1400,
+      "isRequired": true
+    },
+    {
+      "title": { "en": "Module 8: React Components", "it": "Modulo 8: Componenti React" },
+      "orderIndex": 7,
+      "contentType": "VIDEO_YOUTUBE",
+      "youtubeUrl": "https://www.youtube.com/watch?v=Rh3TYjpzXgY",
+      "durationSecs": 1500,
+      "isRequired": true
+    },
+    {
+      "title": { "en": "Module 9: Final Project Walkthrough", "it": "Modulo 9: Progetto Finale" },
+      "orderIndex": 8,
+      "contentType": "VIDEO_UPLOAD",
+      "contentUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+      "durationSecs": 1800,
+      "isRequired": true
+    },
+    {
+      "title": { "en": "Module 10: Cheat Sheet PDF", "it": "Modulo 10: PDF riassuntivo" },
+      "orderIndex": 9,
+      "contentType": "PDF",
+      "contentUrl": "https://www.w3.org/WAI/WCAG21/Techniques/pdf/img/table.pdf",
+      "durationSecs": 300,
+      "isRequired": false
+    }
+  ],
+  "quiz": {
+    "endpoint": "POST /api/v1/quizzes/{{courseId}}",
+    "note": "Quiz is under COURSE, not lesson. Only one FINAL_TEST per course.",
+    "body": {
+      "quizTitle": {
+        "en": "Final Web Development Assessment",
+        "it": "Valutazione Finale Web Development"
+      },
+      "quizType": "FINAL_TEST",
+      "passScorePercent": 80,
+      "maxAttempts": 3,
+      "isActive": true,
+      "isPublished": false,
+      "questions": [
+        {
+          "id": "q1",
+          "text": { "en": "What does HTML stand for?", "it": "Cosa significa HTML?" },
+          "type": "SINGLE",
+          "points": 20,
+          "options": [
+            { "id": "q1-a", "text": { "en": "Hyper Text Markup Language" }, "isCorrect": true },
+            { "id": "q1-b", "text": { "en": "High Tech Modern Language" }, "isCorrect": false },
+            { "id": "q1-c", "text": { "en": "Home Tool Markup Language" }, "isCorrect": false }
+          ]
+        },
+        {
+          "id": "q2",
+          "text": { "en": "Which tag is used for the largest heading?", "it": "Quale tag per il titolo più grande?" },
+          "type": "SINGLE",
+          "points": 20,
+          "options": [
+            { "id": "q2-a", "text": { "en": "<h1>" }, "isCorrect": true },
+            { "id": "q2-b", "text": { "en": "<head>" }, "isCorrect": false },
+            { "id": "q2-c", "text": { "en": "<header>" }, "isCorrect": false }
+          ]
+        },
+        {
+          "id": "q3",
+          "text": { "en": "Which hook is used for state in React?", "it": "Quale hook per lo stato in React?" },
+          "type": "SINGLE",
+          "points": 20,
+          "options": [
+            { "id": "q3-a", "text": { "en": "useState" }, "isCorrect": true },
+            { "id": "q3-b", "text": { "en": "useEffect" }, "isCorrect": false },
+            { "id": "q3-c", "text": { "en": "useContext" }, "isCorrect": false }
+          ]
+        },
+        {
+          "id": "q4",
+          "text": { "en": "CSS Flexbox is mainly used for?", "it": "CSS Flexbox si usa per?" },
+          "type": "SINGLE",
+          "points": 20,
+          "options": [
+            { "id": "q4-a", "text": { "en": "Layout" }, "isCorrect": true },
+            { "id": "q4-b", "text": { "en": "Database" }, "isCorrect": false },
+            { "id": "q4-c", "text": { "en": "Authentication" }, "isCorrect": false }
+          ]
+        },
+        {
+          "id": "q5",
+          "text": { "en": "JavaScript is primarily a?", "it": "JavaScript è principalmente un?" },
+          "type": "SINGLE",
+          "points": 20,
+          "options": [
+            { "id": "q5-a", "text": { "en": "Programming language" }, "isCorrect": true },
+            { "id": "q5-b", "text": { "en": "Markup language" }, "isCorrect": false },
+            { "id": "q5-c", "text": { "en": "Database" }, "isCorrect": false }
+          ]
+        }
+      ]
+    },
+    "submitExample": {
+      "endpoint": "POST /api/v1/quizzes/{{courseId}}/submit/{{quizId}}",
+      "body": {
+        "answers": [
+          { "questionId": "q1", "selectedOptionIds": ["q1-a"] },
+          { "questionId": "q2", "selectedOptionIds": ["q2-a"] },
+          { "questionId": "q3", "selectedOptionIds": ["q3-a"] },
+          { "questionId": "q4", "selectedOptionIds": ["q4-a"] },
+          { "questionId": "q5", "selectedOptionIds": ["q5-a"] }
+        ]
+      }
+    }
+  }
+}

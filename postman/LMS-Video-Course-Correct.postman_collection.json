@@ -1,0 +1,300 @@
+{
+  "info": {
+    "name": "LMS - Video Course Full Test (Correct Format)",
+    "description": "Matches actual quiz.validation.js format. Quiz is created under COURSE (not lesson).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_api", "value": "http://localhost:5000/api/v1" },
+    { "key": "admin_token", "value": "" },
+    { "key": "student_token", "value": "" },
+    { "key": "tenantId", "value": "" },
+    { "key": "courseId", "value": "" },
+    { "key": "lessonId_1", "value": "" },
+    { "key": "lessonId_2", "value": "" },
+    { "key": "quizId", "value": "" },
+    { "key": "enrollmentId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "01 Admin - Create Video Course",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"courseTitle\": {\n    \"en\": \"Complete Web Development Bootcamp\",\n    \"it\": \"Bootcamp Completo di Sviluppo Web\"\n  },\n  \"slug\": \"web-dev-bootcamp-2026\",\n  \"category\": \"CATALOG\",\n  \"format\": \"VIDEO_RECORDED\",\n  \"navigationMode\": \"SEQUENTIAL\",\n  \"description\": {\n    \"en\": \"Programming Hero style course: HTML, CSS, JavaScript, React.\",\n    \"it\": \"Corso stile Programming Hero.\"\n  },\n  \"durationMinutes\": 1200,\n  \"validityDays\": 365,\n  \"passScorePercent\": 80,\n  \"price\": 0,\n  \"basePrice\": 0,\n  \"isActive\": true,\n  \"isB2BOnly\": false,\n  \"tenantId\": \"{{tenantId}}\"\n}"
+        },
+        "url": "{{base_api}}/courses"
+      }
+    },
+    {
+      "name": "02 Admin - Lesson 1 YouTube Intro",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 1: What is Web Development?\", \"it\": \"Modulo 1: Cos'è lo sviluppo web?\" },\n  \"orderIndex\": 0,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=UB1O30fR-EE\",\n  \"durationSecs\": 600,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "03 Admin - Lesson 2 HTML",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 2: HTML Fundamentals\", \"it\": \"Modulo 2: Fondamenti HTML\" },\n  \"orderIndex\": 1,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=qz0aGYrrlhU\",\n  \"durationSecs\": 900,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "04 Admin - Lesson 3 CSS",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 3: CSS Basics\", \"it\": \"Modulo 3: CSS Base\" },\n  \"orderIndex\": 2,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=1Rs2ND1ryYc\",\n  \"durationSecs\": 1200,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "05 Admin - Lesson 4 JS Variables",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 4: JavaScript Variables\", \"it\": \"Modulo 4: Variabili JavaScript\" },\n  \"orderIndex\": 3,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=W6NZfCO5SIk\",\n  \"durationSecs\": 1100,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "06 Admin - Lesson 5 JS Functions",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 5: JavaScript Functions\", \"it\": \"Modulo 5: Funzioni JavaScript\" },\n  \"orderIndex\": 4,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=N8ap4k_4RwY\",\n  \"durationSecs\": 1000,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "07 Admin - Lesson 6 DOM",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 6: DOM Manipulation\", \"it\": \"Modulo 6: Manipolazione DOM\" },\n  \"orderIndex\": 5,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=y17RuWkWdn8\",\n  \"durationSecs\": 1300,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "08 Admin - Lesson 7 React Intro",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 7: React Introduction\", \"it\": \"Modulo 7: Introduzione React\" },\n  \"orderIndex\": 6,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=SqcY0GVwsCY\",\n  \"durationSecs\": 1400,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "09 Admin - Lesson 8 React Components",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 8: React Components\", \"it\": \"Modulo 8: Componenti React\" },\n  \"orderIndex\": 7,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=Rh3TYjpzXgY\",\n  \"durationSecs\": 1500,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "10 Admin - Lesson 9 Uploaded Video",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 9: Final Project Walkthrough\", \"it\": \"Modulo 9: Progetto Finale\" },\n  \"orderIndex\": 8,\n  \"contentType\": \"VIDEO_UPLOAD\",\n  \"contentUrl\": \"https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4\",\n  \"durationSecs\": 1800,\n  \"isRequired\": true\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "11 Admin - Lesson 10 PDF (optional)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": { \"en\": \"Module 10: Cheat Sheet PDF\", \"it\": \"Modulo 10: PDF riassuntivo\" },\n  \"orderIndex\": 9,\n  \"contentType\": \"PDF\",\n  \"contentUrl\": \"https://www.w3.org/WAI/WCAG21/Techniques/pdf/img/table.pdf\",\n  \"durationSecs\": 300,\n  \"isRequired\": false\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons"
+      }
+    },
+    {
+      "name": "12 Admin - Create FINAL_TEST Quiz (under course)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"quizTitle\": {\n    \"en\": \"Final Web Development Assessment\",\n    \"it\": \"Valutazione Finale Web Development\"\n  },\n  \"quizType\": \"FINAL_TEST\",\n  \"passScorePercent\": 80,\n  \"maxAttempts\": 3,\n  \"isActive\": true,\n  \"isPublished\": false,\n  \"questions\": [\n    {\n      \"id\": \"q1\",\n      \"text\": {\n        \"en\": \"What does HTML stand for?\",\n        \"it\": \"Cosa significa HTML?\"\n      },\n      \"type\": \"SINGLE\",\n      \"points\": 20,\n      \"options\": [\n        { \"id\": \"q1-a\", \"text\": { \"en\": \"Hyper Text Markup Language\", \"it\": \"Hyper Text Markup Language\" }, \"isCorrect\": true },\n        { \"id\": \"q1-b\", \"text\": { \"en\": \"High Tech Modern Language\", \"it\": \"High Tech Modern Language\" }, \"isCorrect\": false },\n        { \"id\": \"q1-c\", \"text\": { \"en\": \"Home Tool Markup Language\", \"it\": \"Home Tool Markup Language\" }, \"isCorrect\": false }\n      ]\n    },\n    {\n      \"id\": \"q2\",\n      \"text\": {\n        \"en\": \"Which tag is used for the largest heading?\",\n        \"it\": \"Quale tag si usa per il titolo più grande?\"\n      },\n      \"type\": \"SINGLE\",\n      \"points\": 20,\n      \"options\": [\n        { \"id\": \"q2-a\", \"text\": { \"en\": \"<h1>\", \"it\": \"<h1>\" }, \"isCorrect\": true },\n        { \"id\": \"q2-b\", \"text\": { \"en\": \"<head>\", \"it\": \"<head>\" }, \"isCorrect\": false },\n        { \"id\": \"q2-c\", \"text\": { \"en\": \"<header>\", \"it\": \"<header>\" }, \"isCorrect\": false }\n      ]\n    },\n    {\n      \"id\": \"q3\",\n      \"text\": {\n        \"en\": \"Which hook is used for state in React?\",\n        \"it\": \"Quale hook si usa per lo stato in React?\"\n      },\n      \"type\": \"SINGLE\",\n      \"points\": 20,\n      \"options\": [\n        { \"id\": \"q3-a\", \"text\": { \"en\": \"useState\", \"it\": \"useState\" }, \"isCorrect\": true },\n        { \"id\": \"q3-b\", \"text\": { \"en\": \"useEffect\", \"it\": \"useEffect\" }, \"isCorrect\": false },\n        { \"id\": \"q3-c\", \"text\": { \"en\": \"useContext\", \"it\": \"useContext\" }, \"isCorrect\": false }\n      ]\n    },\n    {\n      \"id\": \"q4\",\n      \"text\": {\n        \"en\": \"CSS Flexbox is mainly used for?\",\n        \"it\": \"CSS Flexbox si usa principalmente per?\"\n      },\n      \"type\": \"SINGLE\",\n      \"points\": 20,\n      \"options\": [\n        { \"id\": \"q4-a\", \"text\": { \"en\": \"Layout\", \"it\": \"Layout\" }, \"isCorrect\": true },\n        { \"id\": \"q4-b\", \"text\": { \"en\": \"Database\", \"it\": \"Database\" }, \"isCorrect\": false },\n        { \"id\": \"q4-c\", \"text\": { \"en\": \"Authentication\", \"it\": \"Autenticazione\" }, \"isCorrect\": false }\n      ]\n    },\n    {\n      \"id\": \"q5\",\n      \"text\": {\n        \"en\": \"JavaScript is primarily a?\",\n        \"it\": \"JavaScript è principalmente un?\"\n      },\n      \"type\": \"SINGLE\",\n      \"points\": 20,\n      \"options\": [\n        { \"id\": \"q5-a\", \"text\": { \"en\": \"Programming language\", \"it\": \"Linguaggio di programmazione\" }, \"isCorrect\": true },\n        { \"id\": \"q5-b\", \"text\": { \"en\": \"Markup language\", \"it\": \"Linguaggio di markup\" }, \"isCorrect\": false },\n        { \"id\": \"q5-c\", \"text\": { \"en\": \"Database\", \"it\": \"Database\" }, \"isCorrect\": false }\n      ]\n    }\n  ]\n}"
+        },
+        "url": "{{base_api}}/quizzes/{{courseId}}"
+      }
+    },
+    {
+      "name": "13 Admin - Publish Quiz",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"isPublished\": true\n}"
+        },
+        "url": "{{base_api}}/quizzes/{{quizId}}/publish"
+      }
+    },
+    {
+      "name": "14 Student - Enroll Free Course",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"courseId\": \"{{courseId}}\"\n}"
+        },
+        "url": "{{base_api}}/payments/checkout/course"
+      }
+    },
+    {
+      "name": "15 Student - My Enrollments",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" }
+        ],
+        "url": "{{base_api}}/enrollments/my"
+      }
+    },
+    {
+      "name": "16 Student - Course Lesson Progress",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" }
+        ],
+        "url": "{{base_api}}/courses/{{courseId}}/lessons/progress"
+      }
+    },
+    {
+      "name": "17 Student - Complete Lesson 1",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 600\n}"
+        },
+        "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_1}}/progress"
+      }
+    },
+    {
+      "name": "18 Student - Start Quiz",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" }
+        ],
+        "url": "{{base_api}}/quizzes/{{courseId}}/start-quiz/{{quizId}}"
+      }
+    },
+    {
+      "name": "19 Student - Submit Quiz (correct format)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"answers\": [\n    { \"questionId\": \"q1\", \"selectedOptionIds\": [\"q1-a\"] },\n    { \"questionId\": \"q2\", \"selectedOptionIds\": [\"q2-a\"] },\n    { \"questionId\": \"q3\", \"selectedOptionIds\": [\"q3-a\"] },\n    { \"questionId\": \"q4\", \"selectedOptionIds\": [\"q4-a\"] },\n    { \"questionId\": \"q5\", \"selectedOptionIds\": [\"q5-a\"] }\n  ]\n}"
+        },
+        "url": "{{base_api}}/quizzes/{{courseId}}/submit/{{quizId}}"
+      }
+    },
+    {
+      "name": "20 Student - My Certificates",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{student_token}}" }
+        ],
+        "url": "{{base_api}}/certificates/my"
+      }
+    }
+  ]
+}
