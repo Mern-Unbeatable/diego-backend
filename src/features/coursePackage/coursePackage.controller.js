@@ -4,7 +4,7 @@ import { coursePackageService } from './coursePackage.service.js';
 import {
     createCoursePackageSchema,
     updateCoursePackageSchema,
-    coursePackageQuerySchema, // ✅ এটা যোগ করা হলো
+    coursePackageQuerySchema,
 } from './coursePackage.validation.js';
 
 class CoursePackageController {
@@ -15,7 +15,7 @@ class CoursePackageController {
         ResponseHandler.success(res, { message: 'Course packages fetched successfully', data: { packages } });
     });
 
-    // ✅ course create/edit form এর dropdown এর জন্য
+
     getForSelection = catchAsync(async (req, res) => {
         const { type } = req.query;
         if (!['SINGLE_USER', 'COMPANY'].includes(type)) {

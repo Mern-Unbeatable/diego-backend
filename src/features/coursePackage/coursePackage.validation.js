@@ -9,7 +9,7 @@ const i18nString = (required = true) => {
     return required ? base : base.optional();
 };
 
-// ✅ FIX: `type` field আবার যোগ করা হলো — refine এ এটাই চেক হচ্ছিল কিন্তু schema তে ছিল না
+
 const featureItemSchema = z.object({
     id: z.string().uuid().optional(),
     type: z.enum(['pricing', 'feature']).default('feature'),
@@ -26,7 +26,6 @@ const featureItemSchema = z.object({
     { message: 'maxUsers must be >= minUsers', path: ['maxUsers'] }
 );
 
-// SINGLE_USER packages এর features হলো plain i18n string (কোনো pricing না)
 const simpleFeatureSchema = z.object(
     SUPPORTED_LOCALES.reduce((acc, l) => ({ ...acc, [l]: z.string().min(1).optional() }), {})
 );

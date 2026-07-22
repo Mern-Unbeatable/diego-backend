@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto'; // ✅ FIX: এই import টাই মিসিং ছিল
+import { randomUUID } from 'crypto';
 import { prisma } from '../../config/db.js';
 
 export class CoursePackageService {
@@ -12,7 +12,7 @@ export class CoursePackageService {
         return prisma.coursePackage.findMany({ where, orderBy: { createdAt: 'desc' } });
     }
 
-    // dropdown এর জন্য — course create/edit form এ ব্যবহার হবে
+
     async listForSelection(type, tenantId = null) {
         return prisma.coursePackage.findMany({
             where: {
@@ -33,7 +33,7 @@ export class CoursePackageService {
     _normalizeFeatures(features = []) {
         return features.map(f => ({
             ...f,
-            id: f.id || randomUUID(), // এখন কাজ করবে, কারণ import যোগ করা হয়েছে
+            id: f.id || randomUUID(),
         }));
     }
 
