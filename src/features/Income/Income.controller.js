@@ -8,6 +8,8 @@ import {
     settleIncomeSchema,
     platformIncomeQuerySchema,
     dashboardQuerySchema,
+    licenseUserReportQuerySchema,
+    salesReportQuerySchema,
 } from './Income.validation.js';
 
 class IncomeController {
@@ -129,7 +131,7 @@ class IncomeController {
     });
 
     getLicenseUserReport = catchAsync(async (req, res) => {
-        const query = dashboardQuerySchema.parse(req.query);
+        const query = licenseUserReportQuerySchema.parse(req.query);
 
         const result = await incomeService.getLicenseUserReport(
             req.user.id,
@@ -158,7 +160,7 @@ class IncomeController {
     });
 
     getPlatformAdminReport = catchAsync(async (req, res) => {
-        const query = dashboardQuerySchema.parse(req.query);
+        const query = salesReportQuerySchema.parse(req.query);
 
         const result = await incomeService.getPlatformAdminReport(
             { ...query, locale: req.locale },

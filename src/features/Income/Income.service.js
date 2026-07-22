@@ -3,7 +3,7 @@ import { prisma } from '../../config/db.js';
 import { Logger } from '../../config/logger.js';
 import { subDays, startOfDay, endOfDay, format } from 'date-fns';
 import { it, enUS } from 'date-fns/locale';
-import { PLATFORM_FEE_PERCENT, INCOME_CATEGORIES } from './Income.constants.js';
+import { PLATFORM_FEE_PERCENT, INCOME_CATEGORIES, CHART_PERIOD_OPTIONS, CHART_SERIES_OPTIONS } from './Income.constants.js';
 
 const log = new Logger('IncomeService');
 
@@ -37,13 +37,12 @@ export class IncomeService {
         return { days, currentStart, currentEnd, previousStart, previousEnd };
     }
 
-    _buildDailyChart(rows, days, locale = 'it') {
+    _buildDailyChart(rows, days, locale = 'it', anchorEnd = new Date()) {
         const dateLocale = DAY_LABEL_LOCALES[locale] || DAY_LABEL_LOCALES.it;
-        const now = new Date();
         const buckets = [];
 
         for (let i = days - 1; i >= 0; i--) {
-            const day = startOfDay(subDays(now, i));
+            const day = startOfDay(subDays(anchorEnd, i));
             const key = format(day, 'yyyy-MM-dd');
             buckets.push({ date: key, label: format(day, 'EEE', { locale: dateLocale }), amount: 0 });
         }
@@ -59,6 +58,120 @@ export class IncomeService {
             label: b.label.charAt(0).toUpperCase() + b.label.slice(1),
             amount: Number(b.amount.toFixed(2)),
         }));
+    }
+
+    /**
+     * Build aligned current vs previous period charts for comparison.
+     * X-axis labels come from the CURRENT period; previous amounts map to the
+     * corresponding day offset in the prior period (not the same calendar dates).
+     */
+    _buildComparisonChart(currentRows, previousRows, days, locale = 'it') {
+        const dateLocale = DAY_LABEL_LOCALES[locale] || DAY_LABEL_LOCALES.it;
+        const now = new Date();
+        const currentBuckets = [];
+        const previousBuckets = [];
+
+        for (let i = days - 1; i >= 0; i--) {
+            const currentDay = startOfDay(subDays(now, i));
+            const previousDay = startOfDay(subDays(currentDay, days));
+            const label = format(currentDay, 'EEE', { locale: dateLocale });
+            const formattedLabel = label.charAt(0).toUpperCase() + label.slice(1);
+
+            currentBuckets.push({
+                date: format(currentDay, 'yyyy-MM-dd'),
+                label: formattedLabel,
+                amount: 0,
+            });
+            previousBuckets.push({
+                date: format(previousDay, 'yyyy-MM-dd'),
+                label: formattedLabel,
+                amount: 0,
+            });
+        }
+
+        const currentMap = Object.fromEntries(currentBuckets.map((b) => [b.date, b]));
+        const previousMap = Object.fromEntries(previousBuckets.map((b) => [b.date, b]));
+
+        for (const row of currentRows) {
+            const key = format(new Date(row.date), 'yyyy-MM-dd');
+            if (currentMap[key]) currentMap[key].amount += row.amount;
+        }
+
+        for (const row of previousRows) {
+            const key = format(new Date(row.date), 'yyyy-MM-dd');
+            if (previousMap[key]) previousMap[key].amount += row.amount;
+        }
+
+        const formatBuckets = (buckets) => buckets.map((b) => ({
+            date: b.date,
+            label: b.label,
+            amount: Number(b.amount.toFixed(2)),
+        }));
+
+        return {
+            current: formatBuckets(currentBuckets),
+            previous: formatBuckets(previousBuckets),
+        };
+    }
+
+    _resolveChartPeriod(chartDays = 7) {
+        const days = CHART_PERIOD_OPTIONS.includes(chartDays) ? chartDays : 7;
+        const now = new Date();
+        const currentStart = startOfDay(subDays(now, days - 1));
+        const currentEnd = endOfDay(now);
+        const previousStart = startOfDay(subDays(currentStart, days));
+        const previousEnd = endOfDay(subDays(currentStart, 1));
+        return { days, now, currentStart, currentEnd, previousStart, previousEnd };
+    }
+
+    _buildSalesChartData(chart, series) {
+        if (series === 'current') {
+            return chart.current.map((point) => ({
+                date: point.date,
+                label: point.label,
+                amount: point.amount,
+            }));
+        }
+
+        if (series === 'previous') {
+            return chart.previous.map((point, index) => ({
+                date: point.date,
+                label: chart.current[index]?.label || point.label,
+                amount: point.amount,
+            }));
+        }
+
+        return chart.current.map((point, index) => ({
+            label: point.label,
+            date: point.date,
+            current: point.amount,
+            previous: chart.previous[index]?.amount ?? 0,
+        }));
+    }
+
+    _buildSalesChartResponse({ chart, series, chartDays, currentTotal, previousTotal }) {
+        const data = this._buildSalesChartData(chart, series);
+        const base = {
+            chartDays,
+            series,
+            chartDaysOptions: CHART_PERIOD_OPTIONS,
+            data,
+        };
+
+        if (series === 'both') {
+            return {
+                ...base,
+                currentTotal: Number(currentTotal.toFixed(2)),
+                previousTotal: Number(previousTotal.toFixed(2)),
+                changePercent: this._percentChange(currentTotal, previousTotal),
+            };
+        }
+
+        const total = series === 'current' ? currentTotal : previousTotal;
+        return {
+            ...base,
+            total: Number(total.toFixed(2)),
+        };
     }
 
     async _getLicenseForUser(userId) {
@@ -874,45 +987,44 @@ export class IncomeService {
     }
 
     /**
-     * LICENSE_USER report page — sales chart + course performance table.
+     * LICENSE_USER report page — sales chart (current vs previous period).
      */
     async getLicenseUserReport(userId, queryParams = {}, locale = 'it') {
         const license = await this._getLicenseForUser(userId);
-        const chartDays = Math.min(Math.max(Number(queryParams.chartDays) || 7, 1), 90);
+        const { days, currentStart, currentEnd, previousStart, previousEnd } = this._resolveChartPeriod(queryParams.chartDays);
+        const series = queryParams.series || 'both';
+
+        const emptyChart = this._buildSalesChartResponse({
+            chart: { current: [], previous: [] },
+            series,
+            chartDays: days,
+            currentTotal: 0,
+            previousTotal: 0,
+        });
 
         if (!license) {
             return {
-                salesChart: { current: [], previous: [], periodDays: chartDays },
-                courses: [],
+                ...emptyChart,
+                seriesOptions: (CHART_SERIES_OPTIONS[locale] || CHART_SERIES_OPTIONS.it),
             };
         }
 
-        const now = new Date();
-        const currentStart = startOfDay(subDays(now, chartDays - 1));
-        const previousStart = startOfDay(subDays(currentStart, chartDays));
-        const previousEnd = endOfDay(subDays(currentStart, 1));
+        const includeCurrent = series === 'current' || series === 'both';
+        const includePrevious = series === 'previous' || series === 'both';
 
-        const [currentIncomes, previousIncomes, courses] = await Promise.all([
-            prisma.licenseeIncome.findMany({
-                where: { licenseId: license.id, createdAt: { gte: currentStart } },
-                select: { createdAt: true, licenseeAmount: true },
-            }),
-            prisma.licenseeIncome.findMany({
-                where: { licenseId: license.id, createdAt: { gte: previousStart, lte: previousEnd } },
-                select: { createdAt: true, licenseeAmount: true },
-            }),
-            prisma.course.findMany({
-                where: { tenantId: license.tenantId },
-                select: {
-                    id: true,
-                    slug: true,
-                    courseTitle: true,
-                    isActive: true,
-                    createdAt: true,
-                    _count: { select: { enrollments: true } },
-                },
-                orderBy: { createdAt: 'desc' },
-            }),
+        const [currentIncomes, previousIncomes] = await Promise.all([
+            includeCurrent
+                ? prisma.licenseeIncome.findMany({
+                    where: { licenseId: license.id, createdAt: { gte: currentStart, lte: currentEnd } },
+                    select: { createdAt: true, licenseeAmount: true },
+                })
+                : Promise.resolve([]),
+            includePrevious
+                ? prisma.licenseeIncome.findMany({
+                    where: { licenseId: license.id, createdAt: { gte: previousStart, lte: previousEnd } },
+                    select: { createdAt: true, licenseeAmount: true },
+                })
+                : Promise.resolve([]),
         ]);
 
         const mapIncomeRows = (rows) => rows.map((r) => ({
@@ -920,26 +1032,24 @@ export class IncomeService {
             amount: r.licenseeAmount || 0,
         }));
 
+        const currentTotal = currentIncomes.reduce((s, r) => s + (r.licenseeAmount || 0), 0);
+        const previousTotal = previousIncomes.reduce((s, r) => s + (r.licenseeAmount || 0), 0);
+        const chart = this._buildComparisonChart(
+            mapIncomeRows(currentIncomes),
+            mapIncomeRows(previousIncomes),
+            days,
+            locale,
+        );
+
         return {
-            salesChart: {
-                current: this._buildDailyChart(mapIncomeRows(currentIncomes), chartDays, locale),
-                previous: this._buildDailyChart(mapIncomeRows(previousIncomes), chartDays, locale),
-                periodDays: chartDays,
-                currentTotal: currentIncomes.reduce((s, r) => s + (r.licenseeAmount || 0), 0),
-                previousTotal: previousIncomes.reduce((s, r) => s + (r.licenseeAmount || 0), 0),
-                changePercent: this._percentChange(
-                    currentIncomes.reduce((s, r) => s + (r.licenseeAmount || 0), 0),
-                    previousIncomes.reduce((s, r) => s + (r.licenseeAmount || 0), 0),
-                ),
-            },
-            courses: courses.map((course) => ({
-                id: course.id,
-                slug: course.slug,
-                courseTitle: course.courseTitle,
-                publicationDate: course.createdAt,
-                subscribers: course._count.enrollments,
-                state: course.isActive ? 'PUBLISHED' : 'DRAFT',
-            })),
+            ...this._buildSalesChartResponse({
+                chart,
+                series,
+                chartDays: days,
+                currentTotal,
+                previousTotal,
+            }),
+            seriesOptions: CHART_SERIES_OPTIONS[locale] || CHART_SERIES_OPTIONS.it,
         };
     }
 
@@ -1062,16 +1172,20 @@ export class IncomeService {
             throw new Error('Only Platform Admin can view platform report.');
         }
 
-        const chartDays = Math.min(Math.max(Number(queryParams.chartDays) || 7, 1), 90);
+        const { days, currentStart, currentEnd, previousStart, previousEnd } = this._resolveChartPeriod(queryParams.chartDays || 7);
         const locale = queryParams.locale || 'it';
-        const now = new Date();
-        const currentStart = startOfDay(subDays(now, chartDays - 1));
-        const previousStart = startOfDay(subDays(currentStart, chartDays));
-        const previousEnd = endOfDay(subDays(currentStart, 1));
+        const series = queryParams.series || 'both';
+
+        const includeCurrent = series === 'current' || series === 'both';
+        const includePrevious = series === 'previous' || series === 'both';
 
         const [{ payments: currentPayments }, { payments: previousPayments }] = await Promise.all([
-            this._getSuccessfulPayments({ startDate: currentStart, endDate: now }),
-            this._getSuccessfulPayments({ startDate: previousStart, endDate: previousEnd }),
+            includeCurrent
+                ? this._getSuccessfulPayments({ startDate: currentStart, endDate: currentEnd })
+                : Promise.resolve({ payments: [] }),
+            includePrevious
+                ? this._getSuccessfulPayments({ startDate: previousStart, endDate: previousEnd })
+                : Promise.resolve({ payments: [] }),
         ]);
 
         const tenantIds = [
@@ -1090,6 +1204,12 @@ export class IncomeService {
 
         const currentTotal = toChartRows(currentPayments).reduce((s, r) => s + r.amount, 0);
         const previousTotal = toChartRows(previousPayments).reduce((s, r) => s + r.amount, 0);
+        const chart = this._buildComparisonChart(
+            toChartRows(currentPayments),
+            toChartRows(previousPayments),
+            days,
+            locale,
+        );
 
         const bySource = currentPayments.reduce((acc, payment) => {
             const row = this._classifyPaymentIncome(payment, licenseByTenantId);
@@ -1100,14 +1220,14 @@ export class IncomeService {
         }, {});
 
         return {
-            turnoverChart: {
-                current: this._buildDailyChart(toChartRows(currentPayments), chartDays, locale),
-                previous: this._buildDailyChart(toChartRows(previousPayments), chartDays, locale),
-                periodDays: chartDays,
-                currentTotal: Number(currentTotal.toFixed(2)),
-                previousTotal: Number(previousTotal.toFixed(2)),
-                changePercent: this._percentChange(currentTotal, previousTotal),
-            },
+            ...this._buildSalesChartResponse({
+                chart,
+                series,
+                chartDays: days,
+                currentTotal,
+                previousTotal,
+            }),
+            seriesOptions: CHART_SERIES_OPTIONS[locale] || CHART_SERIES_OPTIONS.it,
             incomeBySource: Object.entries(bySource).map(([category, data]) => ({
                 category,
                 transactions: data.transactions,

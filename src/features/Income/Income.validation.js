@@ -30,3 +30,14 @@ export const dashboardQuerySchema = z.object({
     chartDays: z.coerce.number().int().min(1).max(90).default(7),
     locale: z.enum(['it', 'en', 'fr', 'zh']).optional(),
 });
+
+export const licenseUserReportQuerySchema = z.object({
+    chartDays: z.coerce.number().pipe(z.union([z.literal(7), z.literal(30), z.literal(90)])).optional(),
+    period: z.coerce.number().pipe(z.union([z.literal(7), z.literal(30), z.literal(90)])).optional(),
+    series: z.enum(['current', 'previous', 'both']).optional().default('both'),
+}).transform(({ chartDays, period, series }) => ({
+    chartDays: period ?? chartDays ?? 7,
+    series: series ?? 'both',
+}));
+
+export const salesReportQuerySchema = licenseUserReportQuerySchema;
