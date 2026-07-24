@@ -66,10 +66,16 @@ class QuizController {
             enrollmentId ?? null,
         );
 
+        const message = result.alreadySubmitted
+            ? 'Quiz already passed. Returning your best result.'
+            : result.passed
+              ? 'Quiz passed! Well done.'
+              : 'Quiz submitted. Keep trying!';
+
         this.log.info(`Quiz submitted: ${quizId} by user ${req.user.id} | score: ${result.scorePercent}% | passed: ${result.passed}`);
 
-        ResponseHandler.created(res, {
-            message: result.passed ? 'Quiz passed! Well done.' : 'Quiz submitted. Keep trying!',
+        ResponseHandler.success(res, {
+            message,
             data: { result },
         });
     });

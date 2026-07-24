@@ -4,6 +4,7 @@ import { authMiddleware } from '../../shared/globals/helpers/auth-middleware.js'
 import { userController } from './user.controller.js';
 import { i18nMiddleware } from '../../shared/globals/helpers/I18n.middleware.js';
 import { uploadUserAvatar } from '../../shared/upload/upload.presets.js';
+import { credentialController } from '../credential/credential.controller.js';
 
 const router = express.Router();
 router.use(authMiddleware.protect);
@@ -15,6 +16,8 @@ router.patch('/me', uploadUserAvatar, userController.updateProfile);
 router.patch('/me/avatar', uploadUserAvatar, userController.updateAvatar);
 router.delete('/me', userController.deleteMe);
 router.get('/me/stats', userController.getMyStats);
+router.get('/me/credentials', credentialController.getMyCredentials);
+router.patch('/me/credentials/:id/viewed', credentialController.markCredentialViewed);
 
 // ===== ADMIN ROUTES =====
 router.get('/admin', authMiddleware.authorize('PLATFORM_ADMIN'), userController.getAllUsers);

@@ -89,6 +89,8 @@ export class Server {
 
     app.use(
       helmet({
+        // SCORM HTML is embedded in the LMS frontend iframe (different port/origin).
+        frameguard: false,
         crossOriginResourcePolicy: { policy: 'cross-origin' },
         contentSecurityPolicy: {
           directives: {
@@ -145,10 +147,27 @@ export class Server {
     app.use(urlencoded({ extended: true, limit: '50mb' }));
 
 
-    // Serve locally uploaded files (courses/thumbnails, tickets, staff docs, etc.)
-    app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
-      maxAge: config.NODE_ENV === 'production' ? '7d' : 0,
-    }));
+    const uploadRoots = [
+      path.join(process.cwd(), 'uploads'),
+      path.join(process.cwd(), 'src', 'uploads'),
+    ];
+
+    const allowScormIframeEmbedding = (_req, res, next) => {
+      res.setHeader(
+        'Content-Security-Policy',
+        "frame-ancestors 'self' http://localhost:5173 http://localhost:5174 https://diego.maktechgroup.tech",
+      );
+      next();
+    };
+
+    // Serve locally uploaded files (courses/thumbnails, SCORM packages, etc.)
+    app.use('/uploads', allowScormIframeEmbedding);
+    for (const uploadRoot of uploadRoots) {
+      app.use('/uploads', express.static(uploadRoot, {
+        maxAge: config.NODE_ENV === 'production' ? '7d' : 0,
+        fallthrough: true,
+      }));
+    }
 
     app.use((req, _res, next) => {
       this.log.http(`${req.method} ${req.originalUrl}`);

@@ -2,6 +2,7 @@ import { prisma } from '../../config/db.js';
 import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { notificationService } from '../notification/notification.service.js';
+import { credentialDeliveryService } from '../credential/credentialDelivery.service.js';
 import { Logger } from '../../config/logger.js';
 import { config } from '../../config/config.js';
 
@@ -157,6 +158,20 @@ class CompanyCoursePurchaseService {
                 expiresAt: result.enrollment.accessLinkExpiresAt,
             }).catch(err => log.error(`Notification failed: ${err.message}`));
 
+            const assigner = await prisma.user.findUnique({
+                where: { id: requestedByUserId },
+                select: { id: true, level: true },
+            });
+            await credentialDeliveryService.recordForEnrollments({
+                enrollments: [{
+                    ...result.enrollment,
+                    userId: result.employee.id,
+                }],
+                assignedBy: assigner,
+                username: result.employee.email,
+                temporaryPassword: null,
+            }).catch((err) => log.error(`Credential delivery failed: ${err.message}`));
+
             return {
                 ...result,
                 access: {
@@ -264,6 +279,20 @@ class CompanyCoursePurchaseService {
                 expiresAt: createdAndAssigned.enrollment.accessLinkExpiresAt,
             }).catch(err => log.error(`Credential email failed: ${err.message}`));
         }
+
+        const assigner = await prisma.user.findUnique({
+            where: { id: requestedByUserId },
+            select: { id: true, level: true },
+        });
+        await credentialDeliveryService.recordForEnrollments({
+            enrollments: [{
+                ...createdAndAssigned.enrollment,
+                userId: createdAndAssigned.user.id,
+            }],
+            assignedBy: assigner,
+            username: createdAndAssigned.user.email,
+            temporaryPassword: createdAndAssigned.tempPassword ?? null,
+        }).catch((err) => log.error(`Credential delivery failed: ${err.message}`));
 
         if (!createdAndAssigned.tempPassword) {
             notificationService.notifyCourseAssigned?.({

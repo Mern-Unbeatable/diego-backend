@@ -3,7 +3,7 @@ import { Logger } from '../config/logger.js';
 
 const log = new Logger('VideoCourseQuizSeeder');
 
-const COURSE_ID = 'db3c9a83-2508-44f2-8f41-6a2b4d788ac2';
+const COURSE_ID = 'd2843463-b795-4884-a918-4d2def2e5ca9';
 
 const COURSE_QUIZZES = [
   {
@@ -120,7 +120,7 @@ const COURSE_QUIZZES = [
       it: 'Valutazione Finale Web Development',
     },
     quizType: 'FINAL_TEST',
-    passScorePercent: 80,
+    passScorePercent: 70,
     maxAttempts: 3,
     isActive: true,
     isPublished: true,
@@ -132,7 +132,7 @@ const COURSE_QUIZZES = [
           it: 'Cosa significa HTML?',
         },
         type: 'SINGLE',
-        points: 20,
+        points: 10,
         options: [
           { id: 'q1-a', text: { en: 'Hyper Text Markup Language', it: 'Hyper Text Markup Language' }, isCorrect: true },
           { id: 'q1-b', text: { en: 'High Tech Modern Language', it: 'High Tech Modern Language' }, isCorrect: false },
@@ -146,7 +146,7 @@ const COURSE_QUIZZES = [
           it: 'Quale tag per il titolo più grande?',
         },
         type: 'SINGLE',
-        points: 20,
+        points: 10,
         options: [
           { id: 'q2-a', text: { en: '<h1>', it: '<h1>' }, isCorrect: true },
           { id: 'q2-b', text: { en: '<head>', it: '<head>' }, isCorrect: false },
@@ -160,7 +160,7 @@ const COURSE_QUIZZES = [
           it: 'Quale hook per lo stato in React?',
         },
         type: 'SINGLE',
-        points: 20,
+        points: 10,
         options: [
           { id: 'q3-a', text: { en: 'useState', it: 'useState' }, isCorrect: true },
           { id: 'q3-b', text: { en: 'useEffect', it: 'useEffect' }, isCorrect: false },
@@ -174,7 +174,7 @@ const COURSE_QUIZZES = [
           it: 'CSS Flexbox si usa per?',
         },
         type: 'SINGLE',
-        points: 20,
+        points: 10,
         options: [
           { id: 'q4-a', text: { en: 'Layout', it: 'Layout' }, isCorrect: true },
           { id: 'q4-b', text: { en: 'Database', it: 'Database' }, isCorrect: false },
@@ -188,11 +188,79 @@ const COURSE_QUIZZES = [
           it: 'JavaScript è principalmente un?',
         },
         type: 'SINGLE',
-        points: 20,
+        points: 10,
         options: [
           { id: 'q5-a', text: { en: 'Programming language', it: 'Linguaggio di programmazione' }, isCorrect: true },
           { id: 'q5-b', text: { en: 'Markup language', it: 'Linguaggio di markup' }, isCorrect: false },
           { id: 'q5-c', text: { en: 'Database', it: 'Database' }, isCorrect: false },
+        ],
+      },
+      {
+        id: 'q6',
+        text: {
+          en: 'Which property makes an element a flex container?',
+          it: 'Quale proprietà rende un elemento un contenitore flex?',
+        },
+        type: 'SINGLE',
+        points: 10,
+        options: [
+          { id: 'q6-a', text: { en: 'display: flex', it: 'display: flex' }, isCorrect: true },
+          { id: 'q6-b', text: { en: 'position: flex', it: 'position: flex' }, isCorrect: false },
+          { id: 'q6-c', text: { en: 'float: flex', it: 'float: flex' }, isCorrect: false },
+        ],
+      },
+      {
+        id: 'q7',
+        text: {
+          en: 'What does DOM stand for?',
+          it: 'Cosa significa DOM?',
+        },
+        type: 'SINGLE',
+        points: 10,
+        options: [
+          { id: 'q7-a', text: { en: 'Document Object Model', it: 'Document Object Model' }, isCorrect: true },
+          { id: 'q7-b', text: { en: 'Data Object Model', it: 'Data Object Model' }, isCorrect: false },
+          { id: 'q7-c', text: { en: 'Digital Output Method', it: 'Digital Output Method' }, isCorrect: false },
+        ],
+      },
+      {
+        id: 'q8',
+        text: {
+          en: 'Which HTTP method is typically used to fetch data?',
+          it: 'Quale metodo HTTP si usa per recuperare dati?',
+        },
+        type: 'SINGLE',
+        points: 10,
+        options: [
+          { id: 'q8-a', text: { en: 'GET', it: 'GET' }, isCorrect: true },
+          { id: 'q8-b', text: { en: 'POST', it: 'POST' }, isCorrect: false },
+          { id: 'q8-c', text: { en: 'DELETE', it: 'DELETE' }, isCorrect: false },
+        ],
+      },
+      {
+        id: 'q9',
+        text: {
+          en: 'Git is used for version control.',
+          it: 'Git si usa per il controllo di versione.',
+        },
+        type: 'TRUE_FALSE',
+        points: 10,
+        options: [
+          { id: 'q9-a', text: { en: 'True', it: 'Vero' }, isCorrect: true },
+          { id: 'q9-b', text: { en: 'False', it: 'Falso' }, isCorrect: false },
+        ],
+      },
+      {
+        id: 'q10',
+        text: {
+          en: 'Responsive design adapts to different screen sizes.',
+          it: 'Il design responsive si adatta a diverse dimensioni dello schermo.',
+        },
+        type: 'TRUE_FALSE',
+        points: 10,
+        options: [
+          { id: 'q10-a', text: { en: 'True', it: 'Vero' }, isCorrect: true },
+          { id: 'q10-b', text: { en: 'False', it: 'Falso' }, isCorrect: false },
         ],
       },
     ],
@@ -214,13 +282,33 @@ export async function seedVideoCourseQuiz(courseId = COURSE_ID) {
     select: { id: true, quizType: true },
   });
 
-  const existingTypes = new Set(existingQuizzes.map((quiz) => quiz.quizType));
+  const existingByType = new Map(existingQuizzes.map((quiz) => [quiz.quizType, quiz.id]));
+  const forceUpdate = process.env.FORCE_SEED === 'true';
 
   let created = 0;
   let skipped = 0;
+  let updated = 0;
 
   for (const quiz of COURSE_QUIZZES) {
-    if (existingTypes.has(quiz.quizType)) {
+    if (existingByType.has(quiz.quizType)) {
+      if (forceUpdate && quiz.quizType === 'FINAL_TEST') {
+        const quizId = existingByType.get(quiz.quizType);
+        await prisma.quiz.update({
+          where: { id: quizId },
+          data: {
+            quizTitle: quiz.quizTitle,
+            passScorePercent: quiz.passScorePercent,
+            maxAttempts: quiz.maxAttempts,
+            isActive: quiz.isActive,
+            isPublished: quiz.isPublished,
+            questions: quiz.questions,
+          },
+        });
+        log.info(`Quiz updated (FORCE_SEED) — type: ${quiz.quizType} | id: ${quizId}`);
+        updated++;
+        continue;
+      }
+
       log.info(`Quiz already exists, skipped — type: ${quiz.quizType}`);
       skipped++;
       continue;
@@ -254,10 +342,10 @@ export async function seedVideoCourseQuiz(courseId = COURSE_ID) {
   }
 
   log.info(
-    `Video course quiz seed completed for course ${courseId} — ${created} created, ${skipped} skipped`,
+    `Video course quiz seed completed for course ${courseId} — ${created} created, ${updated} updated, ${skipped} skipped`,
   );
 
-  return { courseId, created, skipped, total: COURSE_QUIZZES.length };
+  return { courseId, created, updated, skipped, total: COURSE_QUIZZES.length };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

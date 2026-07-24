@@ -8,6 +8,7 @@ import {
     formatCertificateAccess,
     userHasArchiveAccess,
 } from '../certificate/certificate.archive.js';
+import { credentialDeliveryService } from '../credential/credentialDelivery.service.js';
 
 class EmployeeService {
 
@@ -499,6 +500,18 @@ class EmployeeService {
             emailSent = false;
         }
 
+        if (result.enrollments.length > 0) {
+            await credentialDeliveryService.recordForEnrollments({
+                enrollments: result.enrollments.map((enrollment) => ({
+                    ...enrollment,
+                    userId: result.user.id,
+                })),
+                assignedBy: adminUser,
+                username: data.email,
+                temporaryPassword: plainPassword,
+            }).catch(() => {});
+        }
+
         return {
             employee: this._mapEmployeeRecord(result.employee, result.user, result.enrollments),
             enrollments: result.enrollments,
@@ -844,6 +857,18 @@ class EmployeeService {
             }
         } catch (_emailErr) {
             emailSent = false;
+        }
+
+        if (result.newEnrollments?.length > 0) {
+            await credentialDeliveryService.recordForEnrollments({
+                enrollments: result.newEnrollments.map((enrollment) => ({
+                    ...enrollment,
+                    userId: employee.userId,
+                })),
+                assignedBy: adminUser,
+                username: employee.user.email,
+                temporaryPassword: plainPassword,
+            }).catch(() => {});
         }
 
         return {
@@ -1556,6 +1581,18 @@ class EmployeeService {
             }
         } catch (_emailErr) {
             emailSent = false;
+        }
+
+        if (result.newEnrollments?.length > 0) {
+            await credentialDeliveryService.recordForEnrollments({
+                enrollments: result.newEnrollments.map((enrollment) => ({
+                    ...enrollment,
+                    userId: employee.userId,
+                })),
+                assignedBy: adminUser,
+                username: employee.user.email,
+                temporaryPassword: null,
+            }).catch(() => {});
         }
 
         return {

@@ -3,7 +3,7 @@ import { Logger } from '../config/logger.js';
 
 const log = new Logger('VideoCourseLessonsSeeder');
 
-const COURSE_ID = 'db3c9a83-2508-44f2-8f41-6a2b4d788ac2';
+const COURSE_ID = 'd2843463-b795-4884-a918-4d2def2e5ca9';
 
 const VIDEO_LESSONS = [
   {

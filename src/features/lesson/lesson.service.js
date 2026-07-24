@@ -6,6 +6,7 @@ import {
     assertCanManageCourse,
 } from '../course/course.permission.js';
 import { enrollmentService } from '../enrollment/enrollment.service.js';
+import { certificateService } from '../certificate/certificate.service.js';
 
 const LESSON_I18N_KEYS = ['title'];
 const SCORM_TYPES = ['SCORM', 'SCORM_12'];
@@ -524,6 +525,21 @@ export class LessonService {
         const requiredLessons = rows.filter(r => r.isRequired);
         const completedRequired = requiredLessons.filter(r => r.isCompleted).length;
 
+        let certificate = await prisma.certificate.findUnique({
+            where: { enrollmentId: enrollment.id },
+            select: {
+                id: true,
+                status: true,
+                pdfUrl: true,
+                issuedAt: true,
+                downloadableUntil: true,
+            },
+        });
+
+        if (enrollment.status === 'COMPLETED' && !certificate) {
+            certificate = await certificateService.autoGenerateOnCompletion(enrollment.id);
+        }
+
         return {
             enrollment: {
                 id: enrollment.id,
@@ -532,6 +548,15 @@ export class LessonService {
                 completedAt: enrollment.completedAt,
                 expiresAt: enrollment.expiresAt,
             },
+            certificate: certificate
+                ? {
+                    id: certificate.id,
+                    status: certificate.status,
+                    pdfUrl: certificate.pdfUrl ?? null,
+                    issuedAt: certificate.issuedAt ?? null,
+                    downloadableUntil: certificate.downloadableUntil ?? null,
+                }
+                : null,
             course: {
                 id: course.id,
                 title: t(course.courseTitle, locale),

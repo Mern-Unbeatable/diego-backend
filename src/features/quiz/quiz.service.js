@@ -185,7 +185,14 @@ class QuizService {
 
         const alreadyPassed = await prisma.quizAttempt.findFirst({
             where: { quizId, enrollmentId: resolvedEnrollmentId, passed: true },
-            select: { id: true, scorePercent: true, attemptedAt: true },
+            select: {
+                id: true,
+                scorePercent: true,
+                passed: true,
+                attemptedAt: true,
+                answers: true,
+            },
+            orderBy: { attemptedAt: 'desc' },
         });
         const attemptsUsed = await prisma.quizAttempt.count({ where: { quizId, enrollmentId: resolvedEnrollmentId } });
 
@@ -209,6 +216,9 @@ class QuizService {
             enrollmentId: resolvedEnrollmentId,
             alreadyPassed: !!alreadyPassed,
             bestAttempt: alreadyPassed ?? null,
+            lastResult: alreadyPassed
+                ? this._mapAttemptToResult(alreadyPassed, quiz)
+                : null,
             attemptsUsed,
             attemptsRemaining: quiz.maxAttempts ? Math.max(quiz.maxAttempts - attemptsUsed, 0) : null,
         };
@@ -331,10 +341,21 @@ class QuizService {
 
         const alreadyPassed = await prisma.quizAttempt.findFirst({
             where: { quizId, enrollmentId: resolvedEnrollmentId, passed: true },
-            select: { id: true },
+            select: {
+                id: true,
+                scorePercent: true,
+                passed: true,
+                attemptedAt: true,
+                answers: true,
+            },
+            orderBy: { attemptedAt: 'desc' },
         });
         if (alreadyPassed) {
-            throw new Error('You have already passed this quiz');
+            return {
+                ...this._mapAttemptToResult(alreadyPassed, quiz),
+                alreadySubmitted: true,
+                enrollmentId: resolvedEnrollmentId,
+            };
         }
 
         const questions = Array.isArray(quiz.questions) ? quiz.questions : [];
@@ -392,10 +413,8 @@ class QuizService {
             data: { quizId, enrollmentId: resolvedEnrollmentId, scorePercent, passed, answers: gradedAnswers },
         });
 
-        // ✅ FIX: enrollment completion-এর একমাত্র সোর্স এখন enrollmentService
-        if (passed) {
-            await enrollmentService.checkAndUpdateEnrollmentStatus(resolvedEnrollmentId);
-        }
+        // Re-check completion even when quiz is failed (lessons may already be done).
+        await enrollmentService.checkAndUpdateEnrollmentStatus(resolvedEnrollmentId);
 
         return {
             attemptId: attempt.id,
@@ -407,6 +426,21 @@ class QuizService {
             totalQuestions: questions.length,
             correctCount: gradedAnswers.filter((a) => a.isCorrect === true).length,
             gradedAnswers,
+        };
+    }
+
+    _mapAttemptToResult(attempt, quiz) {
+        const answers = Array.isArray(attempt.answers) ? attempt.answers : [];
+        const questions = Array.isArray(quiz.questions) ? quiz.questions : [];
+
+        return {
+            attemptId: attempt.id,
+            scorePercent: attempt.scorePercent ?? 0,
+            passed: Boolean(attempt.passed),
+            pendingManualReview: answers.some((answer) => answer.pendingReview),
+            passScorePercent: quiz.passScorePercent ?? 80,
+            totalQuestions: questions.length,
+            correctCount: answers.filter((answer) => answer.isCorrect === true).length,
         };
     }
 

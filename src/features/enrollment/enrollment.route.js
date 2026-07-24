@@ -14,6 +14,7 @@ const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'LICENSE_USER');
 // ── Specific paths first (before /:id) ──
 router.get('/my', enrollmentController.getMyEnrollments);
 router.get('/my-progress/:courseId', enrollmentController.getMyProgress);
+router.post('/my-progress/:courseId/ensure-certificate', enrollmentController.ensureMyCertificate);
 
 // ── License user dashboard & student management ──
 router.get('/licensee/overview', adminGuard, tenantGuard, enrollmentController.getLicenseeOverview);

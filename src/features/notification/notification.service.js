@@ -977,7 +977,7 @@ class NotificationService {
 
         await this._createAlert({
             userId,
-            severity: 'GREEN',
+            severity: 'YELLOW',
             tenantId,
             message: {
                 it: `Attestato disponibile per ${freeDays} giorni — "${courseTitle}"`,

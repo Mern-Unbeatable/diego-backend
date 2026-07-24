@@ -1388,7 +1388,7 @@ class PaymentService {
       amount: Math.round(finalPrice * 100),
       currency: 'eur',
       customer: stripeCustomerId,
-      automatic_payment_methods: { enabled: true },
+      payment_method_types: ['card'],
       metadata: {
         userId,
         courseId,

@@ -443,6 +443,7 @@ model Course {
   assignedTo      AssignCourse[]
   certificates    Certificate[]
   licenseeIncomes LicenseeIncome[]
+  credentialDeliveries CredentialDelivery[]
 
   pricingTiers     CoursePricingTier[]
   companyPurchases CompanyCoursePurchase[]
@@ -721,6 +722,28 @@ model Enrollment {
   @@unique([userId, courseId])
   @@index([userId])
   @@index([courseId])
+  credentialDelivery CredentialDelivery?
+}
+
+model CredentialDelivery {
+  id                String      @id @default(uuid())
+  userId            String
+  user              User        @relation("CredentialDeliveries", fields: [userId], references: [id], onDelete: Cascade)
+  courseId          String?
+  course            Course?     @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  enrollmentId      String?     @unique
+  enrollment        Enrollment? @relation(fields: [enrollmentId], references: [id], onDelete: SetNull)
+  assignedById      String?
+  assignedBy        User?       @relation("CredentialsAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  username          String
+  temporaryPassword String?
+  courseName        String
+  sentFromLabel     String
+  sentFromType      String?
+  viewedAt          DateTime?
+  createdAt         DateTime    @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model Payment {
@@ -1230,6 +1253,8 @@ model User {
   assignedCourses     AssignCourse[]       @relation("AssignedToUser")
   assignedByMe        AssignCourse[]       @relation("AssignedByUser")
   calendarSyncs       CalendarSync[]
+  credentialDeliveries CredentialDelivery[] @relation("CredentialDeliveries")
+  credentialsAssignedBy CredentialDelivery[] @relation("CredentialsAssignedBy")
 
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt

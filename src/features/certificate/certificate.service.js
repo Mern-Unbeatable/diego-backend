@@ -119,6 +119,14 @@ export class CertificateService {
         return where;
     }
 
+    async ensureCertificateForEnrollment(enrollmentId) {
+        const certificate = await this.autoGenerateOnCompletion(enrollmentId);
+        if (!certificate?.pdfUrl) {
+            throw new Error('Certificate could not be generated for this enrollment');
+        }
+        return certificate;
+    }
+
     async autoGenerateOnCompletion(enrollmentId) {
         try {
             const enrollment = await prisma.enrollment.findUnique({

@@ -3,6 +3,7 @@ import { prisma } from '../../config/db.js';
 import { randomBytes } from 'crypto';
 import { addDays } from 'date-fns';
 import { certificateService } from '../certificate/certificate.service.js';
+import { credentialDeliveryService } from '../credential/credentialDelivery.service.js';
 import {
     LICENSEE_COURSE_SELECT,
     formatLicenseeCourse,
@@ -214,7 +215,7 @@ class EnrollmentService {
 
         const calculatedExpiresAt = expiresAt || addDays(new Date(), course.validityDays || 90);
 
-        return prisma.$transaction(async tx => {
+        const enrollment = await prisma.$transaction(async tx => {
             const newEnrollment = await tx.enrollment.create({
                 data: {
                     courseId,
@@ -240,6 +241,20 @@ class EnrollmentService {
 
             return newEnrollment;
         });
+
+        if (userId && enrollment.user) {
+            await credentialDeliveryService.recordForEnrollments({
+                enrollments: [{
+                    ...enrollment,
+                    userId,
+                }],
+                assignedBy: user,
+                username: enrollment.user.email,
+                temporaryPassword: null,
+            }).catch(() => {});
+        }
+
+        return enrollment;
     }
     async bulkEnroll(data, user = null) {
         const { userIds, courseId, expiresAt } = data;
@@ -290,9 +305,24 @@ class EnrollmentService {
                     },
                     include: {
                         user: { select: { id: true, email: true, firstName: true, lastName: true } },
+                        course: { select: { id: true, slug: true, courseTitle: true } },
                     },
                 })
             )
+        );
+
+        await Promise.all(
+            enrollments.map((enrollment) =>
+                credentialDeliveryService.recordForEnrollments({
+                    enrollments: [{
+                        ...enrollment,
+                        userId: enrollment.userId,
+                    }],
+                    assignedBy: user,
+                    username: enrollment.user.email,
+                    temporaryPassword: null,
+                }).catch(() => {}),
+            ),
         );
 
         return {
@@ -531,9 +561,20 @@ class EnrollmentService {
             where: { id: enrollmentId },
             select: { status: true, courseId: true },
         });
-        if (!enrollment || enrollment.status === 'COMPLETED') return null;
+        if (!enrollment || enrollment.status === 'COMPLETED') {
+            if (enrollment?.status === 'COMPLETED') {
+                try {
+                    await certificateService.autoGenerateOnCompletion(enrollmentId);
+                } catch (err) {
+                    console.error(
+                        `Certificate ensure failed for completed enrollment ${enrollmentId}:`,
+                        err.message,
+                    );
+                }
+            }
+            return null;
+        }
 
-        // ── ১. Required lessons সব শেষ কিনা ──
         const requiredLessons = await prisma.lesson.findMany({
             where: { courseId: enrollment.courseId, isRequired: true },
             select: { id: true, contentType: true },
@@ -560,38 +601,46 @@ class EnrollmentService {
             });
         }
 
-        // ── ২. Course-এ published FINAL_TEST থাকলে সেটা pass করা লাগবে ──
-        const finalTest = await prisma.quiz.findFirst({
-            where: { courseId: enrollment.courseId, quizType: 'FINAL_TEST', isActive: true, isPublished: true },
-            select: { id: true },
+        const publishedQuizzes = await prisma.quiz.findMany({
+            where: {
+                courseId: enrollment.courseId,
+                isActive: true,
+                isPublished: true,
+            },
+            select: { id: true, quizType: true },
         });
 
+        const quizPriority = { FINAL_TEST: 3, POST_TEST: 2, PRE_TEST: 1 };
+        const gatingQuiz = publishedQuizzes
+            .slice()
+            .sort((a, b) => (quizPriority[b.quizType] ?? 0) - (quizPriority[a.quizType] ?? 0))[0] ?? null;
+
         let finalTestPassed = true;
-        if (finalTest) {
+        if (gatingQuiz) {
             const passedAttempt = await prisma.quizAttempt.findFirst({
-                where: { quizId: finalTest.id, enrollmentId, passed: true },
+                where: { quizId: gatingQuiz.id, enrollmentId, passed: true },
                 select: { id: true },
             });
             finalTestPassed = !!passedAttempt;
             anyProgress = anyProgress || !!passedAttempt;
         }
 
-        // ── ৩. দুটো শর্তই পূরণ হলে COMPLETED ──
-        const hasAnyRequirement = requiredLessons.length > 0 || !!finalTest;
+        const hasAnyRequirement = requiredLessons.length > 0 || !!gatingQuiz;
         if (hasAnyRequirement && lessonsCompleted && finalTestPassed) {
             const updated = await prisma.enrollment.update({
                 where: { id: enrollmentId },
                 data: { status: 'COMPLETED', completedAt: new Date() },
             });
 
-            certificateService.autoGenerateOnCompletion(enrollmentId).catch(err => {
+            try {
+                await certificateService.autoGenerateOnCompletion(enrollmentId);
+            } catch (err) {
                 console.error(`Certificate auto-generation failed for enrollment ${enrollmentId}:`, err.message);
-            });
+            }
 
             return updated;
         }
 
-        // ── ৪. NOT_STARTED → IN_PROGRESS ──
         if (enrollment.status === 'NOT_STARTED' && anyProgress) {
             return prisma.enrollment.update({
                 where: { id: enrollmentId },
@@ -634,6 +683,34 @@ class EnrollmentService {
             }, {}),
         };
     }
+    async ensureMyCertificate(courseId, userId) {
+        const enrollment = await prisma.enrollment.findUnique({
+            where: { userId_courseId: { userId, courseId } },
+            select: { id: true, status: true },
+        });
+
+        if (!enrollment) {
+            throw new Error('Enrollment not found');
+        }
+
+        if (enrollment.status !== 'COMPLETED') {
+            throw new Error('Course is not completed yet');
+        }
+
+        const certificate = await certificateService.ensureCertificateForEnrollment(enrollment.id);
+
+        return {
+            enrollmentId: enrollment.id,
+            certificate: {
+                id: certificate.id,
+                status: certificate.status,
+                pdfUrl: certificate.pdfUrl ?? null,
+                issuedAt: certificate.issuedAt ?? null,
+                downloadableUntil: certificate.downloadableUntil ?? null,
+            },
+        };
+    }
+
     async getMyProgress(courseId, userId) {
         const enrollment = await prisma.enrollment.findUnique({
             where: { userId_courseId: { userId, courseId } },

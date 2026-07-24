@@ -24,7 +24,13 @@
     "seeds:course-package": "node src/seeds/seed-course-packages.js",
     "seeds:archive-plan": "node src/seeds/certificate-archive-plan.seeder.js",
     "seeds:video-lessons": "node src/seeds/video-course-lessons.seeder.js",
-    "seeds:video-quiz": "node src/seeds/video-course-quiz.seeder.js"
+    "seeds:video-quiz": "node src/seeds/video-course-quiz.seeder.js",
+    "seeds:scorm-lessons": "node src/seeds/scorm-course-lessons.seeder.js",
+    "seeds:scorm-setup": "node src/seeds/scorm-setup.js",
+    "seeds:course-demo": "node src/seeds/seed-course-demo.js",
+    "seeds:course-demo:force": "FORCE_SEED=true node src/seeds/seed-course-demo.js",
+    "seeds:prod-demo": "pnpm run prisma:deploy && pnpm run seeds:course-demo",
+    "repair:certificates": "node src/scripts/repair-missing-certificates.js"
   },
   "keywords": [],
   "author": "",

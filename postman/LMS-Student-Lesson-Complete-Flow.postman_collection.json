@@ -1,25 +1,70 @@
 {
   "info": {
     "name": "LMS - Student Lesson Complete Flow",
-    "description": "Student enrolled course complete করার full flow — lessons + quiz + certificate.\n\nCourse ID: db3c9a83-2508-44f2-8f41-6a2b4d788ac2\n\nSetup:\n1. student_token set করো\n2. Run: 01 Get Course Progress\n3. Run: 02 Get All Lessons (auto-saves lessonId_1..lessonId_9)\n4. Run lesson complete 03-11 sequentially\n5. Run quiz 12-14\n6. Run verify 15-17",
+    "description": "Student enrolled course complete করার full flow — lessons + quiz + certificate.\n\nCourse ID: d2843463-b795-4884-a918-4d2def2e5ca9\n\nSetup:\n1. student_token set করো\n2. Run: 01 Get Course Progress\n3. Run: 02 Get All Lessons (auto-saves lessonId_1..lessonId_9)\n4. Run lesson complete 03-11 sequentially\n5. Run quiz 12-14\n6. Run verify 15-17",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_api", "value": "http://localhost:5000/api/v1" },
-    { "key": "student_token", "value": "" },
-    { "key": "courseId", "value": "db3c9a83-2508-44f2-8f41-6a2b4d788ac2" },
-    { "key": "lessonId_1", "value": "" },
-    { "key": "lessonId_2", "value": "" },
-    { "key": "lessonId_3", "value": "" },
-    { "key": "lessonId_4", "value": "" },
-    { "key": "lessonId_5", "value": "" },
-    { "key": "lessonId_6", "value": "" },
-    { "key": "lessonId_7", "value": "" },
-    { "key": "lessonId_8", "value": "" },
-    { "key": "lessonId_9", "value": "" },
-    { "key": "quizId_final", "value": "" },
-    { "key": "enrollmentId", "value": "" },
-    { "key": "certificateId", "value": "" }
+    {
+      "key": "base_api",
+      "value": "http://localhost:5000/api/v1"
+    },
+    {
+      "key": "student_token",
+      "value": ""
+    },
+    {
+      "key": "courseId",
+      "value": "d2843463-b795-4884-a918-4d2def2e5ca9"
+    },
+    {
+      "key": "lessonId_1",
+      "value": ""
+    },
+    {
+      "key": "lessonId_2",
+      "value": ""
+    },
+    {
+      "key": "lessonId_3",
+      "value": ""
+    },
+    {
+      "key": "lessonId_4",
+      "value": ""
+    },
+    {
+      "key": "lessonId_5",
+      "value": ""
+    },
+    {
+      "key": "lessonId_6",
+      "value": ""
+    },
+    {
+      "key": "lessonId_7",
+      "value": ""
+    },
+    {
+      "key": "lessonId_8",
+      "value": ""
+    },
+    {
+      "key": "lessonId_9",
+      "value": ""
+    },
+    {
+      "key": "quizId_final",
+      "value": ""
+    },
+    {
+      "key": "enrollmentId",
+      "value": ""
+    },
+    {
+      "key": "certificateId",
+      "value": ""
+    }
   ],
   "item": [
     {
@@ -29,7 +74,12 @@
           "name": "01 - Get Course Progress (Dashboard %)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/courses/{{courseId}}/lessons/progress"
           },
           "event": [
@@ -50,7 +100,12 @@
           "name": "02 - Get All Lessons (auto-save lesson IDs)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/courses/{{courseId}}/lessons?limit=20"
           },
           "event": [
@@ -73,7 +128,12 @@
           "name": "03 - Lesson 1 Status",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_1}}/status"
           }
         },
@@ -81,7 +141,12 @@
           "name": "04 - Lesson 1 Detail (video player)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_1}}?includeProgress=true"
           }
         },
@@ -90,8 +155,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{student_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -105,10 +176,19 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{student_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 900\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 900\n}"
+            },
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_2}}/progress"
           }
         },
@@ -117,10 +197,19 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{student_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 1200\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 1200\n}"
+            },
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_3}}/progress"
           }
         },
@@ -129,10 +218,19 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{student_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 1100\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 1100\n}"
+            },
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_4}}/progress"
           }
         },
@@ -141,10 +239,19 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{student_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 1000\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 1000\n}"
+            },
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_5}}/progress"
           }
         },
@@ -153,10 +260,19 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{student_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 1300\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 1300\n}"
+            },
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_6}}/progress"
           }
         },
@@ -165,10 +281,19 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{student_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 1400\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 1400\n}"
+            },
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_7}}/progress"
           }
         },
@@ -177,10 +302,19 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{student_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 1500\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 1500\n}"
+            },
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_8}}/progress"
           }
         },
@@ -189,10 +323,19 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{student_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 1800\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 1800\n}"
+            },
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_9}}/progress"
           }
         },
@@ -200,7 +343,12 @@
           "name": "14 - Get Available Quizzes",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/quizzes/{{courseId}}/available"
           },
           "event": [
@@ -221,7 +369,12 @@
           "name": "15 - Start FINAL_TEST Quiz",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/quizzes/{{courseId}}/start-quiz/{{quizId_final}}"
           }
         },
@@ -230,8 +383,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{student_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -244,7 +403,12 @@
           "name": "17 - Verify Course COMPLETED",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/courses/{{courseId}}/lessons/progress"
           }
         },
@@ -252,7 +416,12 @@
           "name": "18 - Get My Certificates",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/certificates/my"
           },
           "event": [
@@ -274,7 +443,12 @@
           "name": "19 - Download Certificate",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/certificates/{{certificateId}}/download"
           }
         }
@@ -287,7 +461,12 @@
           "name": "GET List Lessons",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/courses/{{courseId}}/lessons"
           }
         },
@@ -295,7 +474,12 @@
           "name": "GET Course Progress",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/courses/{{courseId}}/lessons/progress"
           }
         },
@@ -303,7 +487,12 @@
           "name": "GET Lesson By ID",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_1}}?includeProgress=true"
           }
         },
@@ -311,7 +500,12 @@
           "name": "GET Lesson Status",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_1}}/status"
           }
         },
@@ -320,10 +514,19 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{student_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 600\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 600\n}"
+            },
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_1}}/progress"
           }
         },
@@ -332,8 +535,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -347,10 +556,19 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"durationSecs\": 700\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"durationSecs\": 700\n}"
+            },
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_1}}"
           }
         },
@@ -359,8 +577,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -373,7 +597,12 @@
           "name": "GET Lesson Stats (Admin)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_1}}/stats"
           }
         },
@@ -381,7 +610,12 @@
           "name": "DELETE Lesson (Admin)",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
             "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId_1}}"
           }
         }
@@ -394,7 +628,12 @@
           "name": "GET My All Progress",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/lessons/my-progress"
           }
         },
@@ -402,7 +641,12 @@
           "name": "GET Lesson By ID (standalone)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/lessons/{{lessonId_1}}?includeProgress=true"
           }
         },
@@ -410,7 +654,12 @@
           "name": "GET Lesson Status (standalone)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              }
+            ],
             "url": "{{base_api}}/lessons/{{lessonId_1}}/status"
           }
         },
@@ -419,10 +668,19 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{student_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{student_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 600\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"completed\": true,\n  \"timeSpentSecs\": 600\n}"
+            },
             "url": "{{base_api}}/lessons/{{lessonId_1}}/progress"
           }
         },
@@ -431,10 +689,19 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"durationSecs\": 800\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"durationSecs\": 800\n}"
+            },
             "url": "{{base_api}}/lessons/{{lessonId_1}}"
           }
         },
@@ -442,7 +709,12 @@
           "name": "DELETE Lesson (Admin standalone)",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
             "url": "{{base_api}}/lessons/{{lessonId_1}}"
           }
         },
@@ -450,7 +722,12 @@
           "name": "GET Lesson Stats (Admin standalone)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
             "url": "{{base_api}}/lessons/{{lessonId_1}}/stats"
           }
         }

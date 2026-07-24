@@ -1,5 +1,8 @@
 
 import { prisma } from '../../config/db.js';
+import { config } from '../../config/config.js';
+import fs from 'fs';
+import path from 'path';
 import { enrollmentService } from '../enrollment/enrollment.service.js';
 import { notificationService } from '../notification/notification.service.js';
 import { Logger } from '../../config/logger.js';
@@ -10,6 +13,67 @@ const log = new Logger('ScormService');
 
 
 const isTracked = (contentType) => ['SCORM', 'SCORM_12'].includes(contentType);
+
+const resolvePlayerEntryPoint = (entryPoint) => {
+    const normalized = entryPoint || 'shared/launchpage.html';
+    if (
+        normalized === 'shared/launchpage.html'
+        || normalized.endsWith('/launchpage.html')
+    ) {
+        return 'shared/lms-launchpage.html';
+    }
+    return normalized;
+};
+
+const resolveScormContentUrl = (packageUrl, entryPoint) => {
+    const packageBase = packageUrl.replace(/\/$/, '');
+    const preferredEntry = resolvePlayerEntryPoint(entryPoint);
+    const folderMatch = packageBase.match(/\/uploads\/scorm\/([^/?#]+)/i);
+
+    if (folderMatch) {
+        const preferredLocalPath = path.join(
+            process.cwd(),
+            'uploads',
+            'scorm',
+            folderMatch[1],
+            preferredEntry,
+        );
+        if (fs.existsSync(preferredLocalPath)) {
+            return `${packageBase}/${preferredEntry}`;
+        }
+
+        const srcPreferredLocalPath = path.join(
+            process.cwd(),
+            'src',
+            'uploads',
+            'scorm',
+            folderMatch[1],
+            preferredEntry,
+        );
+        if (fs.existsSync(srcPreferredLocalPath)) {
+            return `${packageBase}/${preferredEntry}`;
+        }
+    }
+
+    return `${packageBase}/${entryPoint || 'shared/launchpage.html'}`;
+};
+
+const resolveScormPlayerContentUrl = (packageBase) => {
+    const folderMatch = packageBase.match(/\/uploads\/scorm\/([^/?#]+)/i);
+    const firstPage = 'Playing/Playing.html';
+
+    if (folderMatch) {
+        const localCandidates = [
+            path.join(process.cwd(), 'uploads', 'scorm', folderMatch[1], firstPage),
+            path.join(process.cwd(), 'src', 'uploads', 'scorm', folderMatch[1], firstPage),
+        ];
+        if (localCandidates.some((candidate) => fs.existsSync(candidate))) {
+            return `${packageBase}/${firstPage}`;
+        }
+    }
+
+    return resolveScormContentUrl(packageBase, 'shared/lms-launchpage.html');
+};
 
 const mapStatus = (raw) => STATUS_MAP[raw?.toLowerCase()] ?? 'UNKNOWN';
 
@@ -82,14 +146,63 @@ class ScormService {
             });
         }
 
+        const apiBase = config.API_URL.replace(/\/$/, '');
+
         return {
             sessionId: session.id,
+            playerUrl: `${apiBase}/api/v1/scorm/player/${session.id}`,
             scormVersion: lesson.scormVersion ?? '1.2',
             scormEntryPoint: lesson.scormEntryPoint,
             scormPackageUrl: lesson.scormPackageUrl,
             resumeData: lastProgress?.scormData ?? null,
             lastStatus: lastProgress?.scormStatus ?? 'NOT_ATTEMPTED',
             totalTimeSecs: lastProgress?.timeSpentSecs ?? 0,
+        };
+    }
+
+    async getPlayerContext(sessionId) {
+        const session = await prisma.scormSession.findUnique({
+            where: { id: sessionId },
+            select: {
+                id: true,
+                exitedAt: true,
+                lesson: {
+                    select: {
+                        scormPackageUrl: true,
+                        scormEntryPoint: true,
+                    },
+                },
+                enrollmentId: true,
+                lessonId: true,
+            },
+        });
+
+        if (!session) {
+            throw new Error('SCORM session not found');
+        }
+
+        if (!session.lesson?.scormPackageUrl) {
+            throw new Error('SCORM package not configured for this lesson');
+        }
+
+        const lastProgress = await prisma.lessonProgress.findUnique({
+            where: {
+                enrollmentId_lessonId: {
+                    enrollmentId: session.enrollmentId,
+                    lessonId: session.lessonId,
+                },
+            },
+            select: { scormData: true, scormStatus: true },
+        });
+
+        const packageBase = session.lesson.scormPackageUrl.replace(/\/$/, '');
+        const contentUrl = resolveScormPlayerContentUrl(packageBase);
+
+        return {
+            sessionId: session.id,
+            contentUrl,
+            resumeData: lastProgress?.scormData ?? null,
+            lastStatus: lastProgress?.scormStatus ?? 'NOT_ATTEMPTED',
         };
     }
 

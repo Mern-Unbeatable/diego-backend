@@ -141,6 +141,17 @@ class EnrollmentController {
             data: { progress },
         });
     });
+
+    ensureMyCertificate = catchAsync(async (req, res) => {
+        const { courseId } = req.params;
+
+        const result = await enrollmentService.ensureMyCertificate(courseId, req.user.id);
+
+        ResponseHandler.success(res, {
+            message: 'Certificate request processed',
+            data: result,
+        });
+    });
     getLicenseeOverview = catchAsync(async (req, res) => {
         const query = enrollmentQuerySchema.parse(req.query);
         const result = await enrollmentService.getLicenseeOverview(query, req.user, req.locale);
