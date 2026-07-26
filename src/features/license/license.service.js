@@ -57,6 +57,13 @@ class LicenseService {
             ? plan.priceMonthly
             : (plan.priceAnnual || plan.priceYearly || plan.priceMonthly * 12);
 
+        const { firstName: resolvedFirstName, lastName: resolvedLastName } =
+            this._resolveLicenseUserNames(firstName, lastName, companyName);
+
+        if (waivePayment && !existingUserId && !password) {
+            throw new Error('Password is required when creating a license user without payment.');
+        }
+
         let userId = existingUserId;
         let tenantId = null;
 
@@ -71,21 +78,37 @@ class LicenseService {
                     }
                     const hasLicense = await tx.license.findUnique({ where: { userId: existing.id }, select: { id: true } });
                     if (hasLicense) throw new Error(`User ${email} already has a license.`);
+
+                    const updateData = {
+                        firstName: resolvedFirstName,
+                        lastName: resolvedLastName,
+                        profileCompleted: true,
+                        companyName: companyName ?? null,
+                    };
+                    if (password) {
+                        updateData.password = await bcrypt.hash(password, 10);
+                    }
+
+                    await tx.user.update({
+                        where: { id: existing.id },
+                        data: updateData,
+                    });
                     userId = existing.id;
                 } else {
-                    const hashed = await bcrypt.hash(password || this._generateTempPassword(), 10);
+                    const plainPassword = password || this._generateTempPassword();
+                    const hashed = await bcrypt.hash(plainPassword, 10);
                     const newUser = await tx.user.create({
                         data: {
                             email,
                             password: hashed,
-                            firstName: firstName ?? null,
-                            lastName: lastName ?? null,
+                            firstName: resolvedFirstName,
+                            lastName: resolvedLastName,
                             level: 'LICENSE_USER',
                             status: 'ACTIVE',
                             isVerified: true,
                             isActive: true,
                             verifiedAt: new Date(),
-                            profileCompleted: !!(firstName && lastName),
+                            profileCompleted: true,
                             consentGiven: true,
                             consentDate: new Date(),
                             companyName: companyName ?? null,
@@ -135,7 +158,14 @@ class LicenseService {
 
             await tx.user.update({
                 where: { id: userId },
-                data: { tenantId: tenant.id, level: 'LICENSE_USER' },
+                data: {
+                    tenantId: tenant.id,
+                    level: 'LICENSE_USER',
+                    firstName: resolvedFirstName,
+                    lastName: resolvedLastName,
+                    profileCompleted: true,
+                    companyName: companyName ?? null,
+                },
             });
 
             tenantId = tenant.id;
@@ -221,14 +251,31 @@ class LicenseService {
             updateData.storageMb = plan.storageMb;
         }
 
-        return prisma.license.update({
+        const updatedLicense = await prisma.license.update({
             where: { userId },
             data: updateData,
             include: {
-                user: { select: { id: true, email: true, firstName: true, lastName: true } },
+                user: { select: { id: true, email: true, firstName: true, lastName: true, profileCompleted: true } },
                 plan: true,
             },
         });
+
+        if (!updatedLicense.user.profileCompleted) {
+            const { firstName, lastName } = this._resolveLicenseUserNames(
+                updatedLicense.user.firstName,
+                updatedLicense.user.lastName,
+                updateData.companyName ?? updatedLicense.companyName,
+            );
+
+            await prisma.user.update({
+                where: { id: userId },
+                data: { profileCompleted: true, firstName, lastName },
+            });
+
+            updatedLicense.user = { ...updatedLicense.user, profileCompleted: true, firstName, lastName };
+        }
+
+        return updatedLicense;
     }
     async renewLicense(userId, data, requestingUser = null) {
         const isAdmin = requestingUser?.level === 'PLATFORM_ADMIN';
@@ -617,6 +664,24 @@ class LicenseService {
             status: computedStatus,
         };
     }
+    _resolveLicenseUserNames(firstName, lastName, companyName) {
+        const trimmedFirst = firstName?.trim();
+        const trimmedLast = lastName?.trim();
+        if (trimmedFirst && trimmedLast) {
+            return { firstName: trimmedFirst, lastName: trimmedLast };
+        }
+
+        const parts = String(companyName || '').trim().split(/\s+/).filter(Boolean);
+        if (parts.length === 0) {
+            return { firstName: 'License', lastName: 'User' };
+        }
+        if (parts.length === 1) {
+            return { firstName: parts[0], lastName: 'Admin' };
+        }
+
+        return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+    }
+
     _generateTempPassword() { return Math.random().toString(36).slice(-10) + 'A1!'; }
 }
 

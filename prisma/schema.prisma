@@ -141,6 +141,12 @@ enum TicketStatus {
   CLOSED
 }
 
+enum TicketPriority {
+  CRITICAL
+  MEDIUM
+  LOW
+}
+
 enum AntiCheatEvent {
   MOUSE_IDLE
   TAB_CHANGE
@@ -1031,15 +1037,17 @@ model Alert {
 }
 
 model SupportTicket {
-  id          String       @id @default(uuid())
-  userId      String
-  user        User         @relation(fields: [userId], references: [id])
-  subject     Json?
-  message     Json?
-  answer      Json?
-  question    Json?
-  attachments String?
-  status      TicketStatus @default(OPEN)
+  id           String         @id @default(uuid())
+  ticketNumber Int            @unique @default(autoincrement())
+  userId       String
+  user         User           @relation(fields: [userId], references: [id])
+  subject      Json?
+  message      Json?
+  answer       Json?
+  question     Json?
+  attachments  String?
+  status       TicketStatus   @default(OPEN)
+  priority     TicketPriority @default(MEDIUM)
 
   tenantId String?
   tenant   Tenant? @relation(fields: [tenantId], references: [id])
@@ -1049,6 +1057,7 @@ model SupportTicket {
 
   @@index([userId])
   @@index([tenantId])
+  @@index([ticketNumber])
 }
 
 model CalendarSync {

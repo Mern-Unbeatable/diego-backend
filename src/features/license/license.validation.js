@@ -49,6 +49,10 @@ export const createLicenseSchema = z
     .refine(d => d.userId || d.email, {
         message: 'Either userId or email must be provided.',
         path: ['userId'],
+    })
+    .refine(d => !d.waivePayment || d.userId || (d.password && d.password.length >= 8), {
+        message: 'Password is required for new license users when payment is waived.',
+        path: ['password'],
     });
 
 // ── Update License Schema ──

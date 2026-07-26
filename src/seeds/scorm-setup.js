@@ -9,7 +9,7 @@ import { Logger } from '../config/logger.js';
 const log = new Logger('ScormSetup');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_COURSE_ID = process.env.COURSE_ID || 'd2843463-b795-4884-a918-4d2def2e5ca9';
+const DEFAULT_COURSE_ID = process.env.COURSE_ID || '0c227f68-acb2-4b69-ab4c-241a1de6ea5f';
 const ZIP_CANDIDATES = [
   path.join(process.cwd(), 'seeds', 'assets', 'sample-scorm.zip'),
   path.join(__dirname, 'assets', 'sample-scorm.zip'),

@@ -1,0 +1,226 @@
+{
+  "info": {
+    "name": "LMS - Company Admin Courses & Certificates",
+    "description": "Test company admin My Courses and Certificates pages. Login as COMPANY_ADMIN first.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_api", "value": "http://localhost:5000/api/v1" },
+    { "key": "company_admin_token", "value": "" },
+    { "key": "courseId", "value": "" },
+    { "key": "enrollmentId", "value": "" },
+    { "key": "employeeUserId", "value": "" },
+    { "key": "certificateId", "value": "" },
+    { "key": "companyCoursePurchaseId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0 - Auth",
+      "item": [
+        {
+          "name": "Company Admin Signin",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"company-admin@example.com\",\n  \"password\": \"Password@123\"\n}"
+            },
+            "url": "{{base_api}}/auth/signin"
+          }
+        },
+        {
+          "name": "Verify Login OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json?.data?.tokens?.accessToken || json?.data?.accessToken;",
+                  "if (token) pm.collectionVariables.set('company_admin_token', token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"company-admin@example.com\",\n  \"otp\": \"123456\"\n}"
+            },
+            "url": "{{base_api}}/auth/verify-login-otp"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 - My Courses Page",
+      "item": [
+        {
+          "name": "GET company courses (cards)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const course = json?.data?.courses?.[0];",
+                  "if (course?.courseId) pm.collectionVariables.set('courseId', course.courseId);",
+                  "if (course?.companyCoursePurchaseId) pm.collectionVariables.set('companyCoursePurchaseId', course.companyCoursePurchaseId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" }
+            ],
+            "url": "{{base_api}}/employees/courses"
+          }
+        },
+        {
+          "name": "GET progress report by course",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const row = json?.data?.report?.[0];",
+                  "if (row?.enrollmentId) pm.collectionVariables.set('enrollmentId', row.enrollmentId);",
+                  "if (row?.employeeUserId) pm.collectionVariables.set('employeeUserId', row.employeeUserId);",
+                  "if (row?.certificateId) pm.collectionVariables.set('certificateId', row.certificateId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_api}}/employees/progress-report?courseId={{courseId}}&page=1&limit=6",
+              "host": ["{{base_api}}"],
+              "path": ["employees", "progress-report"],
+              "query": [
+                { "key": "courseId", "value": "{{courseId}}" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "6" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST send training reminder",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" }
+            ],
+            "url": "{{base_api}}/employees/enrollments/{{enrollmentId}}/reminder"
+          }
+        },
+        {
+          "name": "POST add employee + assign course",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Mario\",\n  \"lastName\": \"Rossi\",\n  \"email\": \"mario.rossi.company@example.com\",\n  \"contactNumber\": \"+39333111222\",\n  \"role\": \"Operatore\",\n  \"employmentDate\": \"2026-01-15\",\n  \"courseIds\": [\"{{courseId}}\"],\n  \"companyCoursePurchaseId\": \"{{companyCoursePurchaseId}}\"\n}"
+            },
+            "url": "{{base_api}}/employees"
+          }
+        },
+        {
+          "name": "POST assign course to existing employee",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courseIds\": [\"{{courseId}}\"],\n  \"companyCoursePurchaseId\": \"{{companyCoursePurchaseId}}\"\n}"
+            },
+            "url": "{{base_api}}/employees/{{employeeUserId}}/assign-courses"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 - Certificates Page",
+      "item": [
+        {
+          "name": "GET all company certificates",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const cert = json?.data?.certificates?.[0];",
+                  "if (cert?.id) pm.collectionVariables.set('certificateId', cert.id);",
+                  "if (cert?.employee?.userId) pm.collectionVariables.set('employeeUserId', cert.employee.userId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_api}}/employees/certificates?page=1&limit=6",
+              "host": ["{{base_api}}"],
+              "path": ["employees", "certificates"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "6" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET certificates filtered by course",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_api}}/employees/certificates?courseId={{courseId}}&search=mario&page=1&limit=6",
+              "host": ["{{base_api}}"],
+              "path": ["employees", "certificates"],
+              "query": [
+                { "key": "courseId", "value": "{{courseId}}" },
+                { "key": "search", "value": "mario" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "6" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET download employee certificate",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" }
+            ],
+            "url": "{{base_api}}/employees/{{employeeUserId}}/certificates/{{certificateId}}/download"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -77,6 +77,25 @@ class EmployeeController {
         });
     });
 
+    getCompanyCourses = catchAsync(async (req, res) => {
+        const result = await employeeService.getCompanyCourses(req.user);
+
+        ResponseHandler.success(res, {
+            message: 'Company courses fetched successfully',
+            data: result,
+        });
+    });
+
+    sendEnrollmentReminder = catchAsync(async (req, res) => {
+        const { enrollmentId } = req.params;
+        const result = await employeeService.sendEnrollmentReminder(enrollmentId, req.user);
+
+        ResponseHandler.success(res, {
+            message: 'Training reminder sent successfully',
+            data: result,
+        });
+    });
+
     getRoleSuggestions = catchAsync(async (_req, res) => {
         ResponseHandler.success(res, {
             message: 'Employee role suggestions fetched',

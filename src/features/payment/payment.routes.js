@@ -17,6 +17,8 @@ router.get('/intent/course/verify', paymentController.verifyCoursePaymentIntent)
 // ── Company corporate course — first purchase ──
 const companyGuard = authMiddleware.authorize('COMPANY_ADMIN', 'PLATFORM_ADMIN');
 router.post('/checkout/company-course', companyGuard, paymentController.createCompanyCourseCheckout);
+router.post('/intent/company-course', companyGuard, paymentController.createCompanyCoursePaymentIntent);
+router.get('/intent/company-course/verify', companyGuard, paymentController.verifyCompanyCoursePaymentIntent);
 router.get('/verify/company-course', companyGuard, paymentController.verifyCompanyCoursePurchase);
 
 // ── Single user renewal ──

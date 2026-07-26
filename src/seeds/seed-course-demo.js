@@ -6,7 +6,7 @@ import { seedScormCourseLessons } from './scorm-course-lessons.seeder.js';
 
 const log = new Logger('CourseDemoSeeder');
 
-const DEFAULT_COURSE_ID = 'd2843463-b795-4884-a918-4d2def2e5ca9';
+const DEFAULT_COURSE_ID = '0c227f68-acb2-4b69-ab4c-241a1de6ea5f';
 
 export async function seedCourseDemo(courseId = DEFAULT_COURSE_ID) {
   log.info(`Starting full course demo seed for course ${courseId}`);

@@ -39,6 +39,16 @@ class PaymentService {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
   }
 
+  _resolveSingleCoursePrice(course) {
+    const salePrice = Number(course?.price);
+    if (Number.isFinite(salePrice) && salePrice > 0) return salePrice;
+
+    const basePrice = Number(course?.basePrice);
+    if (Number.isFinite(basePrice) && basePrice > 0) return basePrice;
+
+    return 0;
+  }
+
   async _assertPaymentProcessingEnabled() {
     await platformSettingService.assertPaymentAllowed();
   }
@@ -427,7 +437,7 @@ class PaymentService {
 
     const coupon = await this._resolveCoupon(couponCode, course.tenantId);
 
-    const originalPrice = Number.isFinite(course.basePrice) && course.basePrice > 0 ? course.basePrice : course.price;
+    const originalPrice = this._resolveSingleCoursePrice(course);
     const finalPrice = this._applyDiscount(originalPrice, coupon);
     const courseTitle = course.courseTitle?.en || course.courseTitle?.it || Object.values(course.courseTitle || {})[0] || 'Course';
 
@@ -663,6 +673,103 @@ class PaymentService {
     };
   }
 
+  async createCompanyCoursePaymentIntent({ userId, courseId, tierId = null, minUsers = null, maxUsers = null, seatsCount = null, couponCode = null }) {
+    await this._assertPaymentProcessingEnabled();
+
+    const requester = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, companyId: true },
+    });
+    if (!requester) throw new Error('User not found');
+    if (!requester.companyId) throw new Error('Only company accounts can purchase corporate access');
+
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { id: true, courseTitle: true, slug: true, isActive: true, validityDays: true, tenantId: true },
+    });
+    if (!course) throw new Error('Course not found');
+    if (!course.isActive) throw new Error('Course is not active');
+
+    const existingPurchase = await prisma.companyCoursePurchase.findFirst({
+      where: {
+        companyId: requester.companyId,
+        courseId,
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true },
+    });
+    if (existingPurchase) throw new Error('Your company has already purchased this course');
+
+    const existingEnrollment = await prisma.enrollment.findUnique({
+      where: { userId_courseId: { userId, courseId } },
+      select: { id: true, status: true },
+    });
+    if (existingEnrollment) {
+      throw new Error(existingEnrollment.status === 'COMPLETED'
+        ? 'You have already completed this course'
+        : 'You are already enrolled in this course');
+    }
+
+    const pricing = await this._resolveCompanyPurchasePricing({ courseId, tierId, minUsers, maxUsers, seatsCount });
+    const coupon = await this._resolveCoupon(couponCode, course.tenantId, 'COURSE');
+    const finalTotal = this._applyDiscount(pricing.totalAmount, coupon);
+    const courseTitle = course.courseTitle?.en || course.courseTitle?.it || Object.values(course.courseTitle || {})[0] || 'Course';
+
+    if (finalTotal <= 0) {
+      throw new Error('Company course purchase amount must be greater than zero');
+    }
+
+    const stripeCustomerId = await this._getOrCreateStripeCustomer(userId);
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(finalTotal * 100),
+      currency: 'eur',
+      customer: stripeCustomerId,
+      payment_method_types: ['card'],
+      metadata: {
+        userId,
+        courseId,
+        companyId: requester.companyId,
+        seatsCount: String(pricing.seatsCount),
+        pricePerUser: String(pricing.pricePerUser),
+        tierId: pricing.tierId || '',
+        tierMinUsers: String(pricing.minUsers),
+        tierMaxUsers: pricing.maxUsers != null ? String(pricing.maxUsers) : '',
+        pricingSource: pricing.source,
+        type: 'COMPANY_COURSE_PURCHASE',
+        couponId: coupon?.id ?? '',
+        tenantId: course.tenantId ?? '',
+      },
+      description: `${courseTitle} — Corporate (${pricing.seatsCount} users)`,
+    });
+
+    const payment = await prisma.payment.create({
+      data: {
+        userId,
+        companyId: requester.companyId,
+        type: 'SINGLE_COURSE',
+        status: 'PENDING',
+        amount: finalTotal,
+        currency: 'EUR',
+        stripePaymentIntentId: paymentIntent.id,
+        stripeCustomerId,
+        tenantId: course.tenantId,
+        ...(coupon && { couponId: coupon.id }),
+      },
+    });
+
+    log.info(`Company course payment intent: course=${courseId} tierId=${pricing.tierId || 'legacy'} company=${requester.companyId}`);
+    return this._paymentIntentResponse(paymentIntent, payment, {
+      originalPrice: pricing.totalAmount,
+      finalPrice: finalTotal,
+      discount: pricing.totalAmount - finalTotal,
+      courseId,
+      courseTitle,
+      tierId: pricing.tierId,
+      totalAmount: finalTotal,
+      seatsCount: pricing.seatsCount,
+    });
+  }
+
   async verifyCompanyCoursePurchase(sessionId, userId) {
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     if (session.payment_status !== 'paid') return { paid: false, message: 'Payment not completed yet' };
@@ -825,6 +932,127 @@ class PaymentService {
     return { paid: true, type: 'company_course_purchase', purchase, payment };
   }
 
+  async verifyCompanyCoursePaymentIntent(paymentIntentId, userId) {
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (paymentIntent.status !== 'succeeded') {
+      return { paid: false, message: `Payment status: ${paymentIntent.status}` };
+    }
+
+    const metadata = paymentIntent.metadata || {};
+    const sessionType = this._pickMetadataValue(metadata, ['type']);
+    if (sessionType && sessionType !== 'COMPANY_COURSE_PURCHASE') {
+      throw new Error(`Invalid payment intent type for this endpoint: ${sessionType}`);
+    }
+
+    const requester = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, level: true, companyId: true },
+    });
+    if (!requester) throw new Error('User not found');
+
+    const intentUserId = this._pickMetadataValue(metadata, ['userId']);
+    if (intentUserId && intentUserId !== userId) {
+      throw new Error('Permission denied: this payment does not belong to you');
+    }
+
+    const payment = await prisma.payment.findFirst({
+      where: { stripePaymentIntentId: paymentIntentId },
+      select: { id: true, amount: true, companyId: true, status: true, userId: true },
+    });
+    if (!payment) throw new Error('Payment record not found for this payment intent');
+
+    const courseId = this._pickMetadataValue(metadata, ['courseId']);
+    const companyId = this._pickMetadataValue(metadata, ['companyId', 'company_id']) || payment.companyId || requester.companyId;
+    const couponId = this._pickMetadataValue(metadata, ['couponId', 'coupon_id']);
+    const seats = this._parsePositiveInt(this._pickMetadataValue(metadata, ['seatsCount', 'seatsTotal', 'seatCount']));
+    let pricePerUser = this._parseNonNegativeFloat(this._pickMetadataValue(metadata, ['pricePerUser', 'perSeatPrice']));
+    const tierMaxUsers = this._parsePositiveInt(this._pickMetadataValue(metadata, ['tierMaxUsers']));
+
+    if (!courseId) throw new Error('Missing courseId in payment intent metadata');
+    if (!companyId) throw new Error('Missing companyId for corporate purchase');
+    if (!seats) throw new Error('Missing or invalid seats count in payment intent metadata');
+    if (pricePerUser === null) {
+      pricePerUser = Number((payment.amount / seats).toFixed(2));
+    }
+
+    if (requester.level !== 'PLATFORM_ADMIN' && requester.companyId !== companyId) {
+      throw new Error('Permission denied: not your company purchase');
+    }
+
+    const updateResult = await prisma.payment.updateMany({
+      where: { id: payment.id, status: 'PENDING' },
+      data: { status: 'SUCCESS' },
+    });
+
+    if (updateResult.count === 0) {
+      const existing = await prisma.companyCoursePurchase.findFirst({
+        where: { paymentId: payment.id },
+        include: { course: true },
+      });
+      return { paid: true, alreadyProcessed: true, purchase: existing };
+    }
+
+    const course = await prisma.course.findUnique({ where: { id: courseId }, select: { validityDays: true } });
+    if (!course) throw new Error('Course not found for this payment');
+    if (couponId) await prisma.coupon.update({ where: { id: couponId }, data: { usedCount: { increment: 1 } } });
+
+    const expiresAt = addDays(new Date(), course.validityDays || 90);
+
+    const purchase = await prisma.companyCoursePurchase.create({
+      data: {
+        courseId, companyId, seatsTotal: seats, seatsUsed: 0,
+        pricePerUser, totalAmount: payment.amount,
+        expiresAt, paymentId: payment.id,
+      },
+      include: { course: { select: { id: true, courseTitle: true } } },
+    });
+
+    const buyerId = this._pickMetadataValue(metadata, ['userId']) || payment.userId;
+    if (buyerId) {
+      try {
+        const alreadyEnrolled = await prisma.enrollment.findUnique({
+          where: { userId_courseId: { userId: buyerId, courseId } },
+          select: { id: true },
+        });
+
+        if (!alreadyEnrolled) {
+          await prisma.$transaction(async (tx) => {
+            await tx.enrollment.create({
+              data: {
+                userId: buyerId,
+                courseId,
+                companyCoursePurchaseId: purchase.id,
+                companyContextId: companyId,
+                expiresAt: purchase.expiresAt,
+                status: 'NOT_STARTED',
+              },
+            });
+            await tx.companyCoursePurchase.update({
+              where: { id: purchase.id },
+              data: { seatsUsed: { increment: 1 } },
+            });
+          });
+          purchase.seatsUsed = 1;
+          log.info(`Auto-enrolled buyer ${buyerId} in company purchase ${purchase.id}`);
+        }
+      } catch (err) {
+        log.error(`Auto-enroll buyer failed for purchase ${purchase.id}: ${err.message}`);
+      }
+    }
+
+    await this._recordLicenseIncomeForCoursePayment(prisma, { paymentId: payment.id, courseId, grossAmount: payment.amount });
+
+    const companyAdmins = await prisma.user.findMany({ where: { companyId, level: 'COMPANY_ADMIN' }, select: { id: true, email: true } });
+    for (const admin of companyAdmins) {
+      notificationService.notifyPackageReady?.({
+        userId: admin.id, email: admin.email, packageName: purchase.course.courseTitle, seatsTotal: seats,
+      }).catch(() => { });
+    }
+
+    log.info(`Company course purchase created via payment intent: ${purchase.id} — ${seats} seats (tierMaxUsers=${tierMaxUsers ?? 'n/a'})`);
+    return { paid: true, type: 'company_course_purchase', purchase, payment };
+  }
+
   async createCourseRenewalCheckout({ userId, enrollmentId, couponCode = null }) {
     await this._assertPaymentProcessingEnabled();
 
@@ -840,9 +1068,7 @@ class PaymentService {
     if (enrollment.status === 'COMPLETED') throw new Error('Course already completed — no renewal needed');
 
     const coupon = await this._resolveCoupon(couponCode, enrollment.course.tenantId, 'COURSE');
-    const originalPrice = Number.isFinite(enrollment.course.basePrice) && enrollment.course.basePrice > 0
-      ? enrollment.course.basePrice
-      : enrollment.course.price;
+    const originalPrice = this._resolveSingleCoursePrice(enrollment.course);
     const finalPrice = this._applyDiscount(originalPrice, coupon);
     const courseTitle = enrollment.course.courseTitle?.en || enrollment.course.courseTitle?.it || Object.values(enrollment.course.courseTitle || {})[0] || 'Course';
 
@@ -1374,7 +1600,7 @@ class PaymentService {
     }
 
     const coupon = await this._resolveCoupon(couponCode, course.tenantId);
-    const originalPrice = Number.isFinite(course.basePrice) && course.basePrice > 0 ? course.basePrice : course.price;
+    const originalPrice = this._resolveSingleCoursePrice(course);
     const finalPrice = this._applyDiscount(originalPrice, coupon);
     const courseTitle = course.courseTitle?.en || course.courseTitle?.it || Object.values(course.courseTitle || {})[0] || 'Course';
 
@@ -1599,6 +1825,9 @@ class PaymentService {
     switch (type) {
       case 'SINGLE_COURSE':
         await this.verifyCoursePaymentIntent(paymentIntent.id, userId);
+        break;
+      case 'COMPANY_COURSE_PURCHASE':
+        await this.verifyCompanyCoursePaymentIntent(paymentIntent.id, userId);
         break;
       case 'ARCHIVE_STORAGE':
         await this.verifyArchivePaymentIntent(paymentIntent.id, userId);

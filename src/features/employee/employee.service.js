@@ -340,6 +340,152 @@ class EmployeeService {
         return enrollments;
     }
 
+    async getCompanyCourses(adminUser) {
+        const companyId = await this._resolveCompanyId(adminUser);
+
+        const [enrollmentGroups, purchases, adminProfile] = await Promise.all([
+            prisma.enrollment.groupBy({
+                by: ['courseId'],
+                where: {
+                    companyContextId: companyId,
+                    user: { companyId, level: 'COMPANY_EMPLOYEE' },
+                },
+                _count: { _all: true },
+            }),
+            prisma.companyCoursePurchase.findMany({
+                where: { companyId },
+                orderBy: { purchasedAt: 'desc' },
+                include: {
+                    course: {
+                        select: {
+                            id: true,
+                            courseTitle: true,
+                            slug: true,
+                            thumbnailUrl: true,
+                            isActive: true,
+                        },
+                    },
+                },
+            }),
+            prisma.user.findUnique({
+                where: { id: adminUser.id },
+                select: { firstName: true, lastName: true },
+            }),
+        ]);
+
+        const enrolledByCourse = new Map(
+            enrollmentGroups.map((group) => [group.courseId, group._count._all]),
+        );
+        const courseMap = new Map();
+
+        for (const purchase of purchases) {
+            const course = purchase.course;
+            if (!course?.isActive) continue;
+
+            if (!courseMap.has(course.id)) {
+                courseMap.set(course.id, {
+                    courseId: course.id,
+                    courseTitle: this._formatCourseTitle(course.courseTitle),
+                    slug: course.slug,
+                    thumbnailUrl: course.thumbnailUrl,
+                    enrolledEmployees: enrolledByCourse.get(course.id) ?? 0,
+                    companyCoursePurchaseId: purchase.id,
+                    seatsTotal: 0,
+                    seatsUsed: 0,
+                    seatsAvailable: 0,
+                });
+            }
+
+            const entry = courseMap.get(course.id);
+            entry.seatsTotal += purchase.seatsTotal;
+            entry.seatsUsed += purchase.seatsUsed;
+            entry.seatsAvailable += Math.max(0, purchase.seatsTotal - purchase.seatsUsed);
+            if (purchase.seatsUsed < purchase.seatsTotal) {
+                entry.companyCoursePurchaseId = purchase.id;
+            }
+        }
+
+        for (const [courseId, enrolledEmployees] of enrolledByCourse) {
+            if (courseMap.has(courseId)) {
+                courseMap.get(courseId).enrolledEmployees = enrolledEmployees;
+                continue;
+            }
+
+            const course = await prisma.course.findUnique({
+                where: { id: courseId },
+                select: {
+                    id: true,
+                    courseTitle: true,
+                    slug: true,
+                    thumbnailUrl: true,
+                    isActive: true,
+                },
+            });
+            if (!course?.isActive) continue;
+
+            courseMap.set(courseId, {
+                courseId: course.id,
+                courseTitle: this._formatCourseTitle(course.courseTitle),
+                slug: course.slug,
+                thumbnailUrl: course.thumbnailUrl,
+                enrolledEmployees,
+                companyCoursePurchaseId: null,
+                seatsTotal: 0,
+                seatsUsed: 0,
+                seatsAvailable: 0,
+            });
+        }
+
+        return {
+            adminName: `${adminProfile?.firstName || ''} ${adminProfile?.lastName || ''}`.trim(),
+            courses: [...courseMap.values()].sort((a, b) => a.courseTitle.localeCompare(b.courseTitle)),
+        };
+    }
+
+    async sendEnrollmentReminder(enrollmentId, adminUser) {
+        const companyId = await this._resolveCompanyId(adminUser);
+
+        const enrollment = await prisma.enrollment.findFirst({
+            where: {
+                id: enrollmentId,
+                companyContextId: companyId,
+                user: { companyId, level: 'COMPANY_EMPLOYEE' },
+            },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                        firstName: true,
+                        lastName: true,
+                    },
+                },
+                course: { select: { courseTitle: true } },
+            },
+        });
+
+        if (!enrollment) throw new Error('Enrollment not found for your company');
+        if (enrollment.status === 'COMPLETED') throw new Error('This employee has already completed the course');
+
+        const courseTitle = this._formatCourseTitle(enrollment.course.courseTitle);
+        const userName = `${enrollment.user.firstName || ''} ${enrollment.user.lastName || ''}`.trim()
+            || enrollment.user.email;
+
+        await emailService.sendInactiveUserReminder({
+            to: enrollment.user.email,
+            userName,
+            courseTitle,
+        });
+
+        return {
+            sent: true,
+            enrollmentId,
+            employeeUserId: enrollment.user.id,
+            email: enrollment.user.email,
+            courseTitle,
+        };
+    }
+
     async getAssignableCourses(adminUser) {
         const companyId = await this._resolveCompanyId(adminUser);
 
@@ -395,7 +541,7 @@ class EmployeeService {
         });
         if (existingUser) throw new Error('A user with this email already exists');
 
-        // Admin-এর tenantId বের করো
+
         const adminFull = await prisma.user.findUnique({
             where: { id: adminUser.id },
             select: { tenantId: true },
@@ -509,7 +655,7 @@ class EmployeeService {
                 assignedBy: adminUser,
                 username: data.email,
                 temporaryPassword: plainPassword,
-            }).catch(() => {});
+            }).catch(() => { });
         }
 
         return {
@@ -868,7 +1014,7 @@ class EmployeeService {
                 assignedBy: adminUser,
                 username: employee.user.email,
                 temporaryPassword: plainPassword,
-            }).catch(() => {});
+            }).catch(() => { });
         }
 
         return {
@@ -1135,6 +1281,12 @@ class EmployeeService {
         return 'not started';
     }
 
+    _mapProgressStateLabel(status) {
+        if (status === 'COMPLETED') return 'Completato';
+        if (status === 'IN_PROGRESS') return 'In corso';
+        return 'Non iniziato';
+    }
+
     _resolveLastAccess(enrollment, lessonProgress = []) {
         const dates = [
             enrollment.updatedAt,
@@ -1217,7 +1369,9 @@ class EmployeeService {
                 employeeUserId: e.user.id,
                 employeeName: `${e.user.firstName || ''} ${e.user.lastName || ''}`.trim() || e.user.email,
                 state: this._mapProgressState(e.status),
+                statusLabel: this._mapProgressStateLabel(e.status),
                 progress,
+                enrolledAt: e.createdAt,
                 lastAccess: this._resolveLastAccess(e, e.lessonProgress),
                 certificateId: hasCertificate ? e.certificate.id : null,
                 canDownload: hasCertificate,
@@ -1592,7 +1746,7 @@ class EmployeeService {
                 assignedBy: adminUser,
                 username: employee.user.email,
                 temporaryPassword: null,
-            }).catch(() => {});
+            }).catch(() => { });
         }
 
         return {

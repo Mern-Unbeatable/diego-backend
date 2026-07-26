@@ -129,6 +129,37 @@ class PaymentController {
     });
   });
 
+  createCompanyCoursePaymentIntent = catchAsync(async (req, res) => {
+    const { courseId, tierId, minUsers, maxUsers, seatsCount, couponCode } = companyCourseCheckoutSchema.parse(req.body);
+    const userId = req.user.id;
+    this.log.info(`Company course payment intent: user=${userId} course=${courseId} tierId=${tierId || 'legacy'}`);
+
+    const result = await paymentService.createCompanyCoursePaymentIntent({
+      userId, courseId, tierId, minUsers, maxUsers, seatsCount, couponCode,
+    });
+
+    ResponseHandler.created(res, {
+      message: 'Corporate payment intent created',
+      data: result,
+    });
+  });
+
+  verifyCompanyCoursePaymentIntent = catchAsync(async (req, res) => {
+    const parsed = verifyPaymentIntentSchema.parse({
+      payment_intent_id: req.query.payment_intent_id || req.body?.payment_intent_id,
+      paymentIntentId: req.query.paymentIntentId || req.body?.paymentIntentId,
+    });
+    const paymentIntentId = parsed.payment_intent_id || parsed.paymentIntentId;
+    const userId = req.user.id;
+
+    const result = await paymentService.verifyCompanyCoursePaymentIntent(paymentIntentId, userId);
+
+    ResponseHandler.success(res, {
+      message: result.paid ? 'Corporate payment verified' : 'Payment not completed yet',
+      data: result,
+    });
+  });
+
   createCompanyCourseRenewalCheckout = catchAsync(async (req, res) => {
     const { companyCoursePurchaseId, tierId, minUsers, maxUsers, newSeatsCount, couponCode } = companyCourseRenewalCheckoutSchema.parse(req.body);
     const userId = req.user.id;

@@ -4,7 +4,7 @@ import { Logger } from '../config/logger.js';
 
 const log = new Logger('ScormCourseLessonsSeeder');
 
-const COURSE_ID = 'd2843463-b795-4884-a918-4d2def2e5ca9';
+const COURSE_ID = '0c227f68-acb2-4b69-ab4c-241a1de6ea5f';
 
 /**
  * SCORM packages must be extracted (not .zip) and served as static folders.

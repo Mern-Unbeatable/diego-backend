@@ -11,7 +11,7 @@ class CoursePackageController {
 
     getAll = catchAsync(async (req, res) => {
         const query = coursePackageQuerySchema.parse(req.query);
-        const packages = await coursePackageService.getAll(query);
+        const packages = await coursePackageService.getAll(query, req.user);
         ResponseHandler.success(res, { message: 'Course packages fetched successfully', data: { packages } });
     });
 
@@ -21,7 +21,7 @@ class CoursePackageController {
         if (!['SINGLE_USER', 'COMPANY'].includes(type)) {
             throw new Error('type must be SINGLE_USER or COMPANY');
         }
-        const packages = await coursePackageService.listForSelection(type, req.tenantId || req.user?.tenantId);
+        const packages = await coursePackageService.listForSelection(type, req.user);
         ResponseHandler.success(res, { message: 'Packages fetched successfully', data: { packages } });
     });
 
@@ -32,18 +32,18 @@ class CoursePackageController {
 
     create = catchAsync(async (req, res) => {
         const payload = createCoursePackageSchema.parse(req.body);
-        const pkg = await coursePackageService.create(payload, req.user.level, req.user.tenantId);
+        const pkg = await coursePackageService.create(payload, req.user);
         ResponseHandler.created(res, { message: 'Course package created successfully', data: { package: pkg } });
     });
 
     update = catchAsync(async (req, res) => {
         const payload = updateCoursePackageSchema.parse(req.body);
-        const pkg = await coursePackageService.update(req.params.id, payload, req.user.level, req.user.tenantId);
+        const pkg = await coursePackageService.update(req.params.id, payload, req.user);
         ResponseHandler.updated(res, { message: 'Course package updated successfully', data: { package: pkg } });
     });
 
     delete = catchAsync(async (req, res) => {
-        await coursePackageService.delete(req.params.id, req.user.level, req.user.tenantId);
+        await coursePackageService.delete(req.params.id, req.user);
         ResponseHandler.success(res, { message: 'Course package deleted successfully', data: { id: req.params.id } });
     });
 }

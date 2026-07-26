@@ -10,6 +10,34 @@ export const isTracked = (contentType) => TRACKED_TYPES.has(contentType);
 
 const COURSE_I18N_KEYS = ['courseTitle', 'description', 'trainingPlanTitle', 'financingCompany'];
 
+const VALID_COURSE_CATEGORIES = ['SEVESO', 'MANDATORY', 'CATALOG'];
+
+const buildCourseSearchOrConditions = (searchTerm) => {
+    const search = String(searchTerm || '').trim();
+    if (!search) return null;
+
+    const searchUpper = search.toUpperCase();
+    const conditions = [
+        { courseTitle: { path: ['it'], string_contains: search } },
+        { courseTitle: { path: ['en'], string_contains: search } },
+        { courseTitle: { path: ['fr'], string_contains: search } },
+        { courseTitle: { path: ['zh'], string_contains: search } },
+        { slug: { contains: search, mode: 'insensitive' } },
+        { code: { path: ['en'], string_contains: search } },
+        { code: { path: ['it'], string_contains: search } },
+    ];
+
+    if (VALID_COURSE_CATEGORIES.includes(searchUpper)) {
+        conditions.push({ category: { equals: searchUpper } });
+    }
+
+    if (!Number.isNaN(Number(search))) {
+        conditions.push({ duration: Number(search) });
+    }
+
+    return conditions;
+};
+
 const resolveLicenseeTenantId = async (user) => {
     if (user?.tenantId) return user.tenantId;
     if (!user?.id) return null;
@@ -19,6 +47,78 @@ const resolveLicenseeTenantId = async (user) => {
     });
     return dbUser?.tenantId ?? null;
 };
+
+const isLessonProgressComplete = (progress, contentType) => {
+    if (['SCORM', 'SCORM_12'].includes(contentType)) {
+        return ['COMPLETED', 'PASSED'].includes(progress?.scormStatus);
+    }
+    return progress?.completed === true;
+};
+
+async function attachCourseListStats(courses = []) {
+    if (!courses.length) return courses;
+
+    const courseIds = courses.map((course) => course.id);
+
+    const [lessonCounts, enrollments] = await Promise.all([
+        prisma.lesson.groupBy({
+            by: ['courseId'],
+            where: { courseId: { in: courseIds } },
+            _count: { _all: true },
+        }),
+        prisma.enrollment.findMany({
+            where: { courseId: { in: courseIds } },
+            select: {
+                id: true,
+                courseId: true,
+                lessonProgress: {
+                    select: {
+                        completed: true,
+                        scormStatus: true,
+                        lesson: { select: { contentType: true } },
+                    },
+                },
+            },
+        }),
+    ]);
+
+    const lessonCountMap = new Map(
+        lessonCounts.map((row) => [row.courseId, row._count._all]),
+    );
+
+    const progressByCourse = new Map();
+
+    for (const enrollment of enrollments) {
+        const totalLessons = lessonCountMap.get(enrollment.courseId) ?? 0;
+        let percentage = 0;
+
+        if (totalLessons > 0) {
+            const completedLessons = enrollment.lessonProgress.filter((row) =>
+                isLessonProgressComplete(row, row.lesson?.contentType),
+            ).length;
+
+            percentage = Math.round((completedLessons / totalLessons) * 100);
+        }
+
+        if (!progressByCourse.has(enrollment.courseId)) {
+            progressByCourse.set(enrollment.courseId, []);
+        }
+        progressByCourse.get(enrollment.courseId).push(percentage);
+    }
+
+    return courses.map((course) => {
+        const progressValues = progressByCourse.get(course.id) ?? [];
+        const averageProgress = progressValues.length
+            ? Math.round(progressValues.reduce((sum, value) => sum + value, 0) / progressValues.length)
+            : 0;
+
+        return {
+            ...course,
+            enrollmentCount: course._count?.enrollments ?? progressValues.length,
+            averageProgress,
+        };
+    });
+}
 
 export class CourseService {
 
@@ -40,7 +140,9 @@ export class CourseService {
             if (!licenseetenantId) throw new Error('Licensee user has no tenant assigned. Contact admin.');
             where.tenantId = licenseetenantId;
             where.createdById = user.id;
-            if (queryParams.isActive === undefined) where.isActive = true;
+            if (queryParams.isActive !== undefined) {
+                where.isActive = queryParams.isActive === 'true';
+            }
         } else if (isPlatformAdmin) {
             where.createdById = user.id;
             const filterTenant = queryParams.tenantId || tenantId;
@@ -65,7 +167,7 @@ export class CourseService {
             // Ensure category is uppercase and is a valid enum
             const categoryValue = queryParams.category.toUpperCase();
             // Validate against allowed categories
-            const validCategories = ['SEVESO', 'MANDATORY', 'CATALOG'];
+            const validCategories = VALID_COURSE_CATEGORIES;
             if (validCategories.includes(categoryValue)) {
                 where.category = categoryValue;
                 console.log(`✅ Applying category filter: ${categoryValue}`);
@@ -96,17 +198,10 @@ export class CourseService {
 
         // ===== SEARCH =====
         if (queryParams.search) {
-            const search = queryParams.search.trim();
-            where.OR = [
-                { courseTitle: { path: ['it'], string_contains: search } },
-                { courseTitle: { path: ['en'], string_contains: search } },
-                { courseTitle: { path: ['fr'], string_contains: search } },
-                { courseTitle: { path: ['zh'], string_contains: search } },
-                { slug: { contains: search, mode: 'insensitive' } },
-                { category: { equals: search.toUpperCase() } },
-                { code: { path: ['en'], string_contains: search } },
-                { code: { path: ['it'], string_contains: search } },
-            ];
+            const searchConditions = buildCourseSearchOrConditions(queryParams.search);
+            if (searchConditions) {
+                where.OR = searchConditions;
+            }
         }
 
         // ===== CODE FILTER =====
@@ -150,6 +245,24 @@ export class CourseService {
 
         console.log(`📊 Found ${courses.length} courses (total: ${total})`);
 
+        let processedCourses = courses.map(c => {
+                const localized = localizeObject(c, locale, COURSE_I18N_KEYS);
+                const reviews = c.reviews || [];
+                const totalReviews = reviews.length;
+                const averageRating = totalReviews > 0
+                    ? Math.round((reviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews) * 10) / 10
+                    : 0;
+
+                localized.averageRating = averageRating;
+                localized.totalReviews = totalReviews;
+                delete localized.reviews;
+                return localized;
+            });
+
+        if (isLicensee || isPlatformAdmin) {
+            processedCourses = await attachCourseListStats(processedCourses);
+        }
+
         // Process results
         return {
             meta: {
@@ -171,19 +284,7 @@ export class CourseService {
                     isB2BOnly: queryParams.isB2BOnly || null,
                 },
             },
-            courses: courses.map(c => {
-                const localized = localizeObject(c, locale, COURSE_I18N_KEYS);
-                const reviews = c.reviews || [];
-                const totalReviews = reviews.length;
-                const averageRating = totalReviews > 0
-                    ? Math.round((reviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews) * 10) / 10
-                    : 0;
-
-                localized.averageRating = averageRating;
-                localized.totalReviews = totalReviews;
-                delete localized.reviews;
-                return localized;
-            }),
+            courses: processedCourses,
         };
     }
 
@@ -472,8 +573,11 @@ export class CourseService {
             if (!lt) throw new Error('Licensee user has no tenant. Contact admin.');
             finalTenantId = lt;
         }
-        if (user.level === 'PLATFORM_ADMIN' && !finalTenantId) {
-            throw new Error('Platform Admin must provide tenantId.');
+        if (!finalTenantId && user.tenantId) {
+            finalTenantId = user.tenantId;
+        }
+        if (!finalTenantId) {
+            throw new Error('Unable to resolve tenant for course creation. Contact admin.');
         }
 
         if (finalTenantId) {
@@ -553,6 +657,8 @@ export class CourseService {
         const {
             teacherId, tutorId, tenantId, slug, courseTitle,
             pricingTiers,
+            singleUserPackageId,
+            companyPackageId,
             ...rest
         } = data;
 
@@ -569,6 +675,13 @@ export class CourseService {
         const targetTenant = tenantId || course.tenantId;
         if (teacherId) await this._validateTenantUser(teacherId, targetTenant, 'Teacher');
         if (tutorId) await this._validateTenantUser(tutorId, targetTenant, 'Tutor');
+
+        if (singleUserPackageId) {
+            await this._validatePackage(singleUserPackageId, 'SINGLE_USER', targetTenant);
+        }
+        if (companyPackageId) {
+            await this._validatePackage(companyPackageId, 'COMPANY', targetTenant);
+        }
 
         if (tenantId && userLevel === 'PLATFORM_ADMIN') {
             const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, isActive: true } });
@@ -589,6 +702,8 @@ export class CourseService {
                 ...(finalSlug && { slug: finalSlug }),
                 ...(teacherId !== undefined && { teacherId }),
                 ...(tutorId !== undefined && { tutorId }),
+                ...(singleUserPackageId !== undefined && { singleUserPackageId }),
+                ...(companyPackageId !== undefined && { companyPackageId }),
                 ...(tenantId !== undefined && userLevel === 'PLATFORM_ADMIN' && { tenantId }),
             },
             select: courseDetailSelect,
@@ -818,7 +933,7 @@ export class CourseService {
         // ===== CATEGORY FILTER =====
         if (queryParams.category) {
             const categoryValue = queryParams.category.toUpperCase();
-            const validCategories = ['SEVESO', 'MANDATORY', 'CATALOG'];
+            const validCategories = VALID_COURSE_CATEGORIES;
             if (validCategories.includes(categoryValue)) {
                 where.category = categoryValue;
             }
@@ -849,83 +964,10 @@ export class CourseService {
             }
         }
 
-        // ===== SEARCH - FIXED =====
+        // ===== SEARCH =====
         if (queryParams.search) {
-            const search = queryParams.search.trim();
-
-            if (search.length > 0) {
-                // Define valid categories
-                const validCategories = ['SEVESO', 'MANDATORY', 'CATALOG'];
-                const searchUpper = search.toUpperCase();
-
-                // Check if search term matches a valid category
-                const isCategorySearch = validCategories.includes(searchUpper);
-
-                const searchConditions = [
-                    // 1. Course title in all languages
-                    {
-                        courseTitle: {
-                            path: ['it'],
-                            string_contains: search,
-                        },
-                    },
-                    {
-                        courseTitle: {
-                            path: ['en'],
-                            string_contains: search,
-                        },
-                    },
-                    {
-                        courseTitle: {
-                            path: ['fr'],
-                            string_contains: search,
-                        },
-                    },
-                    {
-                        courseTitle: {
-                            path: ['zh'],
-                            string_contains: search,
-                        },
-                    },
-                    // 2. Slug (case-insensitive)
-                    {
-                        slug: {
-                            contains: search,
-                            mode: 'insensitive',
-                        },
-                    },
-                    // 3. Code in English
-                    {
-                        code: {
-                            path: ['en'],
-                            string_contains: search,
-                        },
-                    },
-                    // 4. Code in Italian
-                    {
-                        code: {
-                            path: ['it'],
-                            string_contains: search,
-                        },
-                    },
-                ];
-
-                // ONLY add category search if it's a valid category
-                if (isCategorySearch) {
-                    searchConditions.push({
-                        category: {
-                            equals: searchUpper, // This will be SEVESO, MANDATORY, or CATALOG
-                        },
-                    });
-                }
-
-                // If search term is a number, also search by duration
-                if (!isNaN(search) && search.length > 0) {
-                    searchConditions.push({
-                        duration: Number(search)
-                    });
-                }
-
+            const searchConditions = buildCourseSearchOrConditions(queryParams.search);
+            if (searchConditions) {
                 where.OR = searchConditions;
             }
         }
@@ -1039,11 +1081,10 @@ export class CourseService {
         if (queryParams.format) where.format = queryParams.format;
 
         if (queryParams.search) {
-            where.OR = [
-                { courseTitle: { path: ['it'], string_contains: queryParams.search } },
-                { courseTitle: { path: ['en'], string_contains: queryParams.search } },
-                { slug: { contains: queryParams.search, mode: 'insensitive' } },
-            ];
+            const searchConditions = buildCourseSearchOrConditions(queryParams.search);
+            if (searchConditions) {
+                where.OR = searchConditions;
+            }
         }
 
         const orderBy = { [queryParams.sortBy || 'createdAt']: queryParams.sortOrder === 'asc' ? 'asc' : 'desc' };
@@ -1053,9 +1094,15 @@ export class CourseService {
             prisma.course.count({ where }),
         ]);
 
+        let processedCourses = courses.map(c => localizeObject(c, locale, COURSE_I18N_KEYS));
+
+        if (isLicensee || isPlatformAdmin) {
+            processedCourses = await attachCourseListStats(processedCourses);
+        }
+
         return {
             meta: { page, limit, total, totalPages: Math.ceil(total / limit), createdBy: user?.id, tenantId: where.tenantId ?? null },
-            courses: courses.map(c => localizeObject(c, locale, COURSE_I18N_KEYS)),
+            courses: processedCourses,
         };
     }
 }

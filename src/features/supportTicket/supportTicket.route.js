@@ -15,8 +15,9 @@ router.post('/', uploadTicketFiles, parseLessonJsonFields, supportTicketControll
 
 router.get('/:id', supportTicketController.getTicketById);
 
+const listGuard = authMiddleware.authorize('PLATFORM_ADMIN', 'COMPANY_ADMIN', 'LICENSE_USER');
 const adminGuard = authMiddleware.authorize('PLATFORM_ADMIN');
-router.get('/', adminGuard, supportTicketController.getAllTickets);
+router.get('/', listGuard, supportTicketController.getAllTickets);
 router.patch('/:id', adminGuard, supportTicketController.updateTicket);
 router.patch('/:id/status', adminGuard, supportTicketController.updateTicketStatus);
 router.delete('/:id', adminGuard, supportTicketController.deleteTicket);

@@ -1,5 +1,6 @@
 
 import { z } from 'zod';
+import { formBoolean, optionalFormBoolean } from '../../shared/validation/zodSchemas.js';
 
 const SUPPORTED_LOCALES = ['it', 'en', 'fr', 'zh'];
 
@@ -39,8 +40,8 @@ export const baseLessonSchema = z.object({
     contentUrl: z.string().url('Invalid URL format').optional(),
     youtubeUrl: z.string().url('Invalid YouTube URL').optional(),
     durationSecs: z.coerce.number().int().positive('Duration must be a positive number').optional(),
-    isRequired: z.coerce.boolean().default(true),
-    isLocked: z.coerce.boolean().default(false),
+    isRequired: formBoolean(true),
+    isLocked: formBoolean(false),
 })
     .refine(
         data => TRACKED_TYPES.includes(data.contentType) ? !!data.scormPackageUrl : true,
@@ -75,8 +76,8 @@ export const updateLessonSchema = z.object({
     youtubeUrl: z.string().url().optional().nullable(),
     // ✅ COERCE durationSecs to number
     durationSecs: z.coerce.number().int().positive().optional(),
-    isRequired: z.coerce.boolean().optional(),
-    isLocked: z.coerce.boolean().optional(),
+    isRequired: optionalFormBoolean(),
+    isLocked: optionalFormBoolean(),
 })
     .refine(
         data => {

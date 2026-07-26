@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { formBoolean } from '../../shared/validation/zodSchemas.js';
 
 const SUPPORTED_LOCALES = ['it', 'en', 'fr', 'zh'];
 
@@ -48,8 +49,8 @@ const lessonSchema = z
         contentUrl: z.string().url().optional(),
         youtubeUrl: z.string().url().optional(),
         durationSecs: z.coerce.number().int().positive().optional(),
-        isRequired: z.coerce.boolean().default(true),
-        isLocked: z.coerce.boolean().default(false),
+        isRequired: formBoolean(true),
+        isLocked: formBoolean(false),
     })
     .refine(d => {
         if (TRACKED_LESSON_TYPES.has(d.contentType)) return !!d.scormPackageUrl;
@@ -74,13 +75,20 @@ const pricingTierSchema = z.object({
     id: z.string().uuid().optional(),
     minUsers: z.coerce.number().int().min(1),
     maxUsers: z.coerce.number().int().min(1).optional().nullable(),
-    price: z.coerce.number().min(0),
+    pricePerUser: z.coerce.number().min(0).optional(),
+    price: z.coerce.number().min(0).optional(),
     sortOrder: z.coerce.number().int().default(0),
     isActive: z.coerce.boolean().default(true),
     currency: z.string().default('EUR').optional(),
 
     label: i18nString(false),
-}).refine(
+}).transform((tier) => ({
+    ...tier,
+    pricePerUser: tier.pricePerUser ?? tier.price,
+})).refine(
+    d => d.pricePerUser !== undefined && d.pricePerUser !== null,
+    { message: 'pricePerUser is required', path: ['pricePerUser'] }
+).refine(
     d => d.maxUsers == null || d.maxUsers >= d.minUsers,
     { message: 'maxUsers must be >= minUsers', path: ['maxUsers'] }
 );

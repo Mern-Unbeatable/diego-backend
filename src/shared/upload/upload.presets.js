@@ -62,7 +62,7 @@ export const uploadLessonFiles = createUploadMiddleware([
     { name: 'scormPackageUrl', folder: 'lessons/scorm', type: 'zip', maxCount: 1, maxSizeMB: 500 },
 ]);
 
-export const parseLessonJsonFields = parseJsonFields(['title', 'question', 'answer', 'youtubeUrl']);
+export const parseLessonJsonFields = parseJsonFields(['title', 'question', 'answer']);
 
 
 export const uploadCompanyLogo = createUploadMiddleware([

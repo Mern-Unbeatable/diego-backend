@@ -44,8 +44,9 @@ export const ticketQuerySchema = z.object({
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(50).default(20),
     status: z.enum(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']).optional(),
+    priority: z.enum(['CRITICAL', 'MEDIUM', 'LOW']).optional(),
     userId: z.string().uuid().optional(),
     search: z.string().max(100).optional(),
-    sortBy: z.enum(['createdAt', 'updatedAt', 'status']).default('createdAt'),
+    sortBy: z.enum(['createdAt', 'updatedAt', 'status', 'ticketNumber']).default('createdAt'),
     sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });

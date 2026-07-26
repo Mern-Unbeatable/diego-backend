@@ -18,7 +18,8 @@ class SupportTicketController {
         const result = await supportTicketService.getMyTickets(
             req.user.id,
             query,
-            req.locale
+            req.locale,
+            req.user,
         );
 
         ResponseHandler.success(res, {
@@ -58,7 +59,6 @@ class SupportTicketController {
 
     createTicket = catchAsync(async (req, res) => {
         const payload = createTicketSchema.parse(req.body);
-        console.log('data check', payload)
         const ticket = await supportTicketService.createTicket(
             payload,
             req.user.id
