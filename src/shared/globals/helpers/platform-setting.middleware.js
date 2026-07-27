@@ -6,9 +6,10 @@ import { platformSettingService } from '../../../features/platformSetting/platfo
 const MAINTENANCE_BYPASS_PREFIXES = [
     '/health',
     '/api/v1/platform-settings/status',
-    '/api/v1/auth/signin',
-    '/api/v1/auth/refresh',
+    '/api/v1/auth',
 ];
+
+const getRequestPath = (req) => req.originalUrl?.split('?')[0] || req.path || '';
 
 const isBypassPath = (path) => MAINTENANCE_BYPASS_PREFIXES.some((prefix) => path.startsWith(prefix));
 
@@ -34,7 +35,9 @@ const extractUserLevel = (req) => {
 
 export const maintenanceModeMiddleware = async (req, res, next) => {
     try {
-        if (isBypassPath(req.path)) {
+        const requestPath = getRequestPath(req);
+
+        if (isBypassPath(requestPath)) {
             return next();
         }
 
@@ -49,15 +52,11 @@ export const maintenanceModeMiddleware = async (req, res, next) => {
         }
 
         const locale = req.locale || 'it';
-        const message = settings.maintenanceMessage?.[locale]
-            || settings.maintenanceMessage?.en
-            || settings.maintenanceMessage?.it
-            || 'The platform is currently under maintenance. Please try again later.';
 
         return res.status(HTTP_STATUS.SERVICE_UNAVAILABLE).json({
             status: 'error',
             statusCode: HTTP_STATUS.SERVICE_UNAVAILABLE,
-            message,
+            message: platformSettingService.getMaintenanceMessage(settings, locale),
             data: {
                 maintenanceModeEnabled: true,
             },

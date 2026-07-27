@@ -1,4 +1,5 @@
 import { prisma } from '../../config/db.js';
+import { MaintenanceModeError } from '../../shared/globals/helpers/error-handler.js';
 import { Logger } from '../../config/logger.js';
 import {
     DEFAULT_CERTIFICATE_ARCHIVE_PLAN,
@@ -144,6 +145,27 @@ class PlatformSettingService {
 
     isMaintenanceMode(settings) {
         return Boolean(settings?.maintenanceModeEnabled);
+    }
+
+    getMaintenanceMessage(settings, locale = 'it') {
+        return settings?.maintenanceMessage?.[locale]
+            || settings?.maintenanceMessage?.en
+            || settings?.maintenanceMessage?.it
+            || 'The platform is currently under maintenance. Please try again later.';
+    }
+
+    async assertLoginAllowed(user, locale = 'it') {
+        const settings = await this.getSettings();
+
+        if (!this.isMaintenanceMode(settings)) {
+            return settings;
+        }
+
+        if (user?.level === 'PLATFORM_ADMIN') {
+            return settings;
+        }
+
+        throw new MaintenanceModeError(this.getMaintenanceMessage(settings, locale));
     }
 
     _resolveLocalizedText(value, locale = 'it') {

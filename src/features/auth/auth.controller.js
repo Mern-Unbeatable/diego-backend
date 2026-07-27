@@ -213,6 +213,7 @@ class AuthController {
     }
 
     this._guardSuspended(user);
+    await platformSettingService.assertLoginAllowed(user, req.locale);
 
     const otp = authService.generateOtp();
     await authService.saveOtp(user.id, otp, 'login');
@@ -243,6 +244,7 @@ class AuthController {
 
     const user = await authOtpService.verifyOtpFlow({ email, otp, expectedPurpose: 'login' });
     this._guardSuspended(user);
+    await platformSettingService.assertLoginAllowed(user, req.locale);
 
     const tokens = await authOtpService.issueTokens(user);
     await authService.updateLastLogin(user.id);
@@ -287,6 +289,7 @@ class AuthController {
     const user = await authService.getUserById(decoded.id);
     if (!user) throw new Error('User not found');
     this._guardSuspended(user);
+    await platformSettingService.assertLoginAllowed(user, req.locale);
 
     const newAccessToken = this._signAccessToken(user);
 

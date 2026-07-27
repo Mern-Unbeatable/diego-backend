@@ -175,6 +175,25 @@ export class PaymentRequiredError extends CustomError {
   }
 }
 
+export class MaintenanceModeError extends CustomError {
+  constructor(message = 'The platform is currently under maintenance. Please try again later.') {
+    super(message, HTTP_STATUS.SERVICE_UNAVAILABLE);
+    this.name = 'MaintenanceModeError';
+  }
+
+  serializeErrors() {
+    return {
+      status: this.status,
+      statusCode: this.statusCode,
+      message: this.message,
+      data: {
+        maintenanceModeEnabled: true,
+      },
+      ...(process.env.NODE_ENV === 'development' && { stack: this.stack }),
+    };
+  }
+}
+
 export class InsufficientCreditsError extends PaymentRequiredError {
   constructor(message = 'Insufficient credits') {
     super(message);
