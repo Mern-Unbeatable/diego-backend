@@ -77,6 +77,10 @@ class Config {
     }
     return true;
   }
+
+  getApiBaseUrl() {
+    return (this.API_URL || this.BACKEND_URL || `http://localhost:${this.PORT}`).replace(/\/$/, '');
+  }
 }
 
 export const config = new Config();

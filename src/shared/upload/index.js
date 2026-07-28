@@ -6,7 +6,8 @@ import { config as appConfig } from '../../config/config.js';
 const baseUploadsDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(baseUploadsDir)) fs.mkdirSync(baseUploadsDir, { recursive: true });
 
-const getBaseUrl = () => appConfig.BACKEND_URL || 'http://localhost:5000';
+const getBaseUrl = () =>
+    (appConfig.BACKEND_URL || appConfig.API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const sanitize = (name) => name.replace(/[^a-zA-Z0-9-_]/g, '_');
 
 // ── Reusable type groups — add more as new features need them ──

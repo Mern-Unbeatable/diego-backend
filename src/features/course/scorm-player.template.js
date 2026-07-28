@@ -32,6 +32,11 @@ const buildInitialCmi = (resumeData, lastStatus) => {
   return merged;
 };
 
+const isCompletedStatus = (status) => {
+  const normalized = String(status || '').toLowerCase();
+  return normalized === 'completed' || normalized === 'passed';
+};
+
 export const buildScormPlayerHtml = ({
   sessionId,
   contentUrl,
@@ -63,26 +68,94 @@ export const buildScormPlayerHtml = ({
       var SESSION_ID = ${safeSessionId};
       var API_BASE = ${safeApiBase};
       var cmi = ${safeInitialCmi};
+      var sessionStartMs = Date.now();
+      var commitTimer = null;
+      var finished = false;
+
+      function notifyParent(payload) {
+        try {
+          if (window.parent && window.parent !== window) {
+            var message = Object.assign({ source: 'lms-scorm-player' }, payload || {});
+            window.parent.postMessage(message, '*');
+          }
+        } catch (e) {}
+      }
+
+      function formatSessionTime() {
+        var elapsed = Math.max(0, Math.floor((Date.now() - sessionStartMs) / 1000));
+        var h = Math.floor(elapsed / 3600);
+        var m = Math.floor((elapsed % 3600) / 60);
+        var s = elapsed % 60;
+        return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+      }
 
       function postRuntime(path, body) {
         try {
-          fetch(API_BASE + path, {
+          return fetch(API_BASE + path, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
             keepalive: true,
             credentials: 'omit',
-          }).catch(function () {});
-        } catch (e) {}
+          }).then(function (res) {
+            return res.json().catch(function () { return null; });
+          }).catch(function () { return null; });
+        } catch (e) {
+          return Promise.resolve(null);
+        }
+      }
+
+      function commitRuntime() {
+        cmi['cmi.core.session_time'] = formatSessionTime();
+        return postRuntime('/api/v1/scorm/runtime/commit', {
+          sessionId: SESSION_ID,
+          cmiData: cmi,
+        }).then(function (response) {
+          var data = response && response.data ? response.data : response;
+          var status = data && data.status ? data.status : cmi['cmi.core.lesson_status'];
+          notifyParent({
+            type: 'scorm-progress',
+            sessionId: SESSION_ID,
+            status: status,
+            completed: data && data.completed,
+            score: data && data.score,
+          });
+          if (data && data.completed) {
+            notifyParent({
+              type: 'scorm-complete',
+              sessionId: SESSION_ID,
+              status: data.status,
+              score: data.score,
+            });
+          }
+          return data;
+        });
+      }
+
+      function finishRuntime() {
+        if (finished) return Promise.resolve();
+        finished = true;
+        if (commitTimer) clearInterval(commitTimer);
+        cmi['cmi.core.session_time'] = formatSessionTime();
+        return postRuntime('/api/v1/scorm/runtime/finish', {
+          sessionId: SESSION_ID,
+          cmiData: cmi,
+        }).then(function (response) {
+          var data = response && response.data ? response.data : response;
+          notifyParent({
+            type: 'scorm-complete',
+            sessionId: SESSION_ID,
+            status: data && data.status,
+            score: data && data.score,
+            completed: true,
+          });
+        });
       }
 
       window.API = {
         LMSInitialize: function () { return 'true'; },
         LMSFinish: function () {
-          postRuntime('/api/v1/scorm/runtime/finish', {
-            sessionId: SESSION_ID,
-            cmiData: cmi,
-          });
+          finishRuntime();
           return 'true';
         },
         LMSGetValue: function (element) {
@@ -90,13 +163,15 @@ export const buildScormPlayerHtml = ({
         },
         LMSSetValue: function (element, value) {
           cmi[element] = value;
+          if (element === 'cmi.core.lesson_status' || element === 'cmi.completion_status') {
+            if (isCompletedStatus(value)) {
+              commitRuntime();
+            }
+          }
           return 'true';
         },
         LMSCommit: function () {
-          postRuntime('/api/v1/scorm/runtime/commit', {
-            sessionId: SESSION_ID,
-            cmiData: cmi,
-          });
+          commitRuntime();
           return 'true';
         },
         LMSGetLastError: function () { return '0'; },
@@ -104,7 +179,11 @@ export const buildScormPlayerHtml = ({
         LMSGetDiagnostic: function () { return ''; },
       };
 
+      commitTimer = setInterval(commitRuntime, 30000);
+      window.addEventListener('beforeunload', function () { finishRuntime(); });
+
       document.getElementById('scoFrame').src = ${safeContentUrl};
+      notifyParent({ type: 'scorm-launched', sessionId: SESSION_ID });
     })();
   </script>
 </body>

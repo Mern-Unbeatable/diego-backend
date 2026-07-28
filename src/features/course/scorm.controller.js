@@ -23,7 +23,7 @@ class ScormController {
             buildScormPlayerHtml({
                 sessionId: context.sessionId,
                 contentUrl: context.contentUrl,
-                apiBaseUrl: config.API_URL.replace(/\/$/, ''),
+                apiBaseUrl: config.getApiBaseUrl(),
                 resumeData: context.resumeData,
                 lastStatus: context.lastStatus,
             }),
@@ -67,6 +67,16 @@ class ScormController {
             throw new Error('enrollmentId and lessonId are required');
         }
 
+        if (['PRIVATE_USER', 'COMPANY_EMPLOYEE'].includes(req.user.level)) {
+            const enrollment = await prisma.enrollment.findUnique({
+                where: { id: enrollmentId },
+                select: { userId: true },
+            });
+
+            if (!enrollment || enrollment.userId !== req.user.id) {
+                throw new Error('Permission denied: You can only launch lessons for your own enrollments');
+            }
+        }
 
         const result = await scormService.launch({
             enrollmentId,

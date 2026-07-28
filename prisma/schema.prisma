@@ -842,10 +842,12 @@ model LessonProgress {
   scormStatus   ScormStatus?
   scormScore    Float?
   scormPassed   Boolean?
-  timeSpentSecs Int          @default(0)
-  scormData     Json?
-  startedAt     DateTime?
-  location      String?
+  timeSpentSecs      Int      @default(0)
+  watchPercent       Int      @default(0)
+  lastPositionSecs   Int      @default(0)
+  scormData          Json?
+  startedAt          DateTime?
+  location           String?
 
   @@unique([enrollmentId, lessonId])
   @@index([enrollmentId])

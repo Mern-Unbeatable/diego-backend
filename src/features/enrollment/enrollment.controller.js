@@ -10,6 +10,7 @@ import {
     generateAccessLinkSchema,
     accessLinkSchema,
     bulkEnrollSchema,
+    antiCheatLogSchema,
 } from './enrollment.validation.js';
 
 class EnrollmentController {
@@ -105,11 +106,11 @@ class EnrollmentController {
 
     updateLessonProgress = catchAsync(async (req, res) => {
         const { enrollmentId, lessonId } = req.params;
-        const { completed, timeSpentSecs } = req.body;
+        const { completed, timeSpentSecs, watchPercent, lastPositionSecs } = req.body;
         const progress = await enrollmentService.updateLessonProgress(
             enrollmentId,
             lessonId,
-            { completed, timeSpentSecs },
+            { completed, timeSpentSecs, watchPercent, lastPositionSecs },
             req.user
         );
 
@@ -117,6 +118,22 @@ class EnrollmentController {
         ResponseHandler.updated(res, {
             message: 'Lesson progress updated',
             data: { progress },
+        });
+    });
+
+    logAntiCheat = catchAsync(async (req, res) => {
+        const { enrollmentId } = req.params;
+        const payload = antiCheatLogSchema.parse(req.body);
+
+        const log = await enrollmentService.logAntiCheatEvent(
+            enrollmentId,
+            req.user.id,
+            payload,
+        );
+
+        ResponseHandler.created(res, {
+            message: 'Anti-cheat event logged',
+            data: { log },
         });
     });
 

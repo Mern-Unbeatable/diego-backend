@@ -1,4 +1,5 @@
 import { Logger } from '../../config/logger.js';
+import { NotFoundError } from '../../shared/globals/helpers/error-handler.js';
 import { catchAsync } from '../../shared/globals/decorators/catch-async.js';
 import { ResponseHandler } from '../../shared/globals/helpers/response.handler.js';
 import { lessonService } from './lesson.service.js';
@@ -41,7 +42,7 @@ class LessonController {
             req.user
         );
 
-        if (!lesson) throw new Error('Lesson not found');
+        if (!lesson) throw new NotFoundError('Lesson not found');
 
         ResponseHandler.success(res, {
             message: 'Lesson fetched successfully',

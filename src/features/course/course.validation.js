@@ -57,10 +57,6 @@ const lessonSchema = z
         return true;
     }, { message: 'scormPackageUrl is required for SCORM lessons', path: ['scormPackageUrl'] })
     .refine(d => {
-        if (TRACKED_LESSON_TYPES.has(d.contentType)) return !!d.scormEntryPoint;
-        return true;
-    }, { message: 'scormEntryPoint is required for SCORM lessons (e.g. "index_lms.html")', path: ['scormEntryPoint'] })
-    .refine(d => {
         if (d.contentType === 'VIDEO_YOUTUBE') return !!d.youtubeUrl;
         return true;
     }, { message: 'youtubeUrl is required for VIDEO_YOUTUBE lessons', path: ['youtubeUrl'] })

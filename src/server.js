@@ -118,6 +118,13 @@ export class Server {
             return callback(null, true);
           }
 
+          if (
+            process.env.NODE_ENV === 'development'
+            && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)
+          ) {
+            return callback(null, true);
+          }
+
           return callback(new Error(`CORS blocked: ${origin}`));
         },
         credentials: true,
@@ -248,6 +255,57 @@ export class Server {
           statusCode: HTTP_STATUS.NOT_FOUND,
           message: 'Record not found',
         });
+      }
+
+      if (error.code === 'P1001' || error.code === 'P1002' || error.code === 'P1017') {
+        return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+          status: 'error',
+          statusCode: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+          message: 'Database connection failed. Check DATABASE_URL and ensure the database server is reachable.',
+        });
+      }
+
+      const message = error?.message || '';
+      if (error instanceof Error && !(error instanceof CustomError)) {
+        const devStack = config.NODE_ENV !== 'production' ? { stack: error.stack } : {};
+
+        if (/authentication required|access token|invalid token/i.test(message)) {
+          return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+            status: 'error',
+            statusCode: HTTP_STATUS.UNAUTHORIZED,
+            message,
+            ...devStack,
+          });
+        }
+
+        if (/permission denied|not active|not the teacher/i.test(message)) {
+          return res.status(HTTP_STATUS.FORBIDDEN).json({
+            status: 'error',
+            statusCode: HTTP_STATUS.FORBIDDEN,
+            message,
+            ...devStack,
+          });
+        }
+
+        if (/not found/i.test(message)) {
+          return res.status(HTTP_STATUS.NOT_FOUND).json({
+            status: 'error',
+            statusCode: HTTP_STATUS.NOT_FOUND,
+            message,
+            ...devStack,
+          });
+        }
+
+        if (
+          /required|cannot be empty|invalid|already enrolled|expired|suspended|locked|overlap|no seats/i.test(message)
+        ) {
+          return res.status(HTTP_STATUS.BAD_REQUEST).json({
+            status: 'error',
+            statusCode: HTTP_STATUS.BAD_REQUEST,
+            message,
+            ...devStack,
+          });
+        }
       }
 
       const isProduction = config.NODE_ENV === 'production';

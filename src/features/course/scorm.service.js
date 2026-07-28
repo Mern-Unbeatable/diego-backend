@@ -7,6 +7,15 @@ import { enrollmentService } from '../enrollment/enrollment.service.js';
 import { notificationService } from '../notification/notification.service.js';
 import { Logger } from '../../config/logger.js';
 import { STATUS_MAP, STATUS_PRIORITY } from './course.constant.js';
+import {
+    BadRequestError,
+    NotFoundError,
+} from '../../shared/globals/helpers/error-handler.js';
+import {
+    ensureScormPackagePrepared,
+    looksLikeScormZipUrl,
+    shouldExtractScormZip,
+} from '../../shared/scorm/scormPackage.util.js';
 
 const log = new Logger('ScormService');
 
@@ -59,6 +68,12 @@ const resolveScormContentUrl = (packageUrl, entryPoint) => {
 };
 
 const resolveScormPlayerContentUrl = (packageBase) => {
+    if (looksLikeScormZipUrl(packageBase)) {
+        throw new BadRequestError(
+            'SCORM package is still a .zip file. Re-upload the lesson or contact support to extract the package.',
+        );
+    }
+
     const folderMatch = packageBase.match(/\/uploads\/scorm\/([^/?#]+)/i);
     const firstPage = 'Playing/Playing.html';
 
@@ -100,15 +115,15 @@ class ScormService {
             select: { id: true, status: true, expiresAt: true, userId: true, courseId: true },
         });
 
-        if (!enrollment) throw new Error('Enrollment not found');
-        if (enrollment.status === 'EXPIRED') throw new Error('Enrollment has expired');
-        if (enrollment.status === 'SUSPENDED') throw new Error('Enrollment is suspended');
-        if (enrollment.expiresAt < new Date()) {
+        if (!enrollment) throw new NotFoundError('Enrollment not found');
+        if (enrollment.status === 'EXPIRED') throw new BadRequestError('Enrollment has expired');
+        if (enrollment.status === 'SUSPENDED') throw new BadRequestError('Enrollment is suspended');
+        if (enrollment.expiresAt && enrollment.expiresAt < new Date()) {
             await prisma.enrollment.update({
                 where: { id: enrollmentId },
                 data: { status: 'EXPIRED' },
             });
-            throw new Error('Course access has expired');
+            throw new BadRequestError('Course access has expired');
         }
 
         const lesson = await prisma.lesson.findUnique({
@@ -123,10 +138,45 @@ class ScormService {
             },
         });
 
-        if (!lesson) throw new Error('Lesson not found');
-        if (!isTracked(lesson.contentType)) throw new Error('This lesson type does not support SCORM tracking');
-        if (!lesson.scormPackageUrl) throw new Error('SCORM package not uploaded for this lesson');
-        if (lesson.isLocked) throw new Error('This lesson is locked');
+        if (!lesson) throw new NotFoundError('Lesson not found');
+        if (!isTracked(lesson.contentType)) {
+            throw new BadRequestError('This lesson type does not support SCORM tracking');
+        }
+        if (!lesson.scormPackageUrl) {
+            throw new BadRequestError('SCORM package not uploaded for this lesson');
+        }
+        if (lesson.isLocked) throw new BadRequestError('This lesson is locked');
+
+        let scormPackageUrl = lesson.scormPackageUrl;
+        let scormEntryPoint = lesson.scormEntryPoint;
+
+        if (shouldExtractScormZip(scormPackageUrl)) {
+            try {
+                const prepared = await ensureScormPackagePrepared(
+                    scormPackageUrl,
+                    scormEntryPoint,
+                    lesson.scormVersion ?? '1.2',
+                );
+                scormPackageUrl = prepared.scormPackageUrl;
+                scormEntryPoint = prepared.scormEntryPoint;
+
+                await prisma.lesson.update({
+                    where: { id: lessonId },
+                    data: {
+                        scormPackageUrl: prepared.scormPackageUrl,
+                        scormEntryPoint: prepared.scormEntryPoint,
+                    },
+                });
+            } catch (error) {
+                throw new BadRequestError(error.message || 'Failed to prepare SCORM package');
+            }
+        }
+
+        if (looksLikeScormZipUrl(scormPackageUrl)) {
+            throw new BadRequestError(
+                'SCORM package could not be extracted. Upload a single SCORM .zip (not a bundle of example archives).',
+            );
+        }
 
         const lastProgress = await prisma.lessonProgress.findUnique({
             where: { enrollmentId_lessonId: { enrollmentId, lessonId } },
@@ -146,14 +196,14 @@ class ScormService {
             });
         }
 
-        const apiBase = config.API_URL.replace(/\/$/, '');
+        const apiBase = config.getApiBaseUrl();
 
         return {
             sessionId: session.id,
             playerUrl: `${apiBase}/api/v1/scorm/player/${session.id}`,
             scormVersion: lesson.scormVersion ?? '1.2',
-            scormEntryPoint: lesson.scormEntryPoint,
-            scormPackageUrl: lesson.scormPackageUrl,
+            scormEntryPoint,
+            scormPackageUrl,
             resumeData: lastProgress?.scormData ?? null,
             lastStatus: lastProgress?.scormStatus ?? 'NOT_ATTEMPTED',
             totalTimeSecs: lastProgress?.timeSpentSecs ?? 0,
@@ -170,6 +220,7 @@ class ScormService {
                     select: {
                         scormPackageUrl: true,
                         scormEntryPoint: true,
+                        scormVersion: true,
                     },
                 },
                 enrollmentId: true,
@@ -178,11 +229,42 @@ class ScormService {
         });
 
         if (!session) {
-            throw new Error('SCORM session not found');
+            throw new NotFoundError('SCORM session not found');
         }
 
         if (!session.lesson?.scormPackageUrl) {
-            throw new Error('SCORM package not configured for this lesson');
+            throw new BadRequestError('SCORM package not configured for this lesson');
+        }
+
+        let packageBase = session.lesson.scormPackageUrl.replace(/\/$/, '');
+        let entryPoint = session.lesson.scormEntryPoint;
+
+        if (shouldExtractScormZip(packageBase)) {
+            try {
+                const prepared = await ensureScormPackagePrepared(
+                    packageBase,
+                    entryPoint,
+                    session.lesson.scormVersion ?? '1.2',
+                );
+                packageBase = prepared.scormPackageUrl;
+                entryPoint = prepared.scormEntryPoint;
+
+                await prisma.lesson.update({
+                    where: { id: session.lessonId },
+                    data: {
+                        scormPackageUrl: prepared.scormPackageUrl,
+                        scormEntryPoint: prepared.scormEntryPoint,
+                    },
+                });
+            } catch (error) {
+                throw new BadRequestError(error.message || 'Failed to prepare SCORM package');
+            }
+        }
+
+        if (looksLikeScormZipUrl(packageBase)) {
+            throw new BadRequestError(
+                'SCORM package is still a .zip file. Re-upload the lesson SCORM package.',
+            );
         }
 
         const lastProgress = await prisma.lessonProgress.findUnique({
@@ -195,7 +277,6 @@ class ScormService {
             select: { scormData: true, scormStatus: true },
         });
 
-        const packageBase = session.lesson.scormPackageUrl.replace(/\/$/, '');
         const contentUrl = resolveScormPlayerContentUrl(packageBase);
 
         return {
@@ -210,7 +291,7 @@ class ScormService {
     async commit({ sessionId, cmiData }) {
         const session = await prisma.scormSession.findUnique({
             where: { id: sessionId },
-            select: { id: true, enrollmentId: true, lessonId: true },
+            select: { id: true, enrollmentId: true, lessonId: true, launchedAt: true },
         });
         if (!session) throw new Error('SCORM session not found');
 
@@ -219,7 +300,9 @@ class ScormService {
             data: { cmiData },
         });
 
-        return { success: true };
+        const syncResult = await this._syncLessonProgressFromCmi(session, cmiData ?? {}, false);
+
+        return { success: true, ...syncResult };
     }
 
 
@@ -230,11 +313,31 @@ class ScormService {
         });
         if (!session) throw new Error('SCORM session not found');
 
+        const sessionTime = cmiData?.['cmi.core.session_time']
+            ?? cmiData?.['cmi.session_time']
+            ?? '00:00:00';
+        const sessionSecs = parseScormTime(sessionTime);
+
+        const syncResult = await this._syncLessonProgressFromCmi(session, cmiData ?? {}, true);
+
+        await this._checkCourseCompletion(session.enrollmentId);
+
+        return {
+            success: true,
+            status: syncResult.status,
+            score: syncResult.score,
+            sessionSecs,
+            totalSecs: syncResult.totalSecs,
+            completed: syncResult.completed,
+        };
+    }
+
+    async _syncLessonProgressFromCmi(session, cmiData, finalizeSession = false) {
         const rawStatus = cmiData?.['cmi.core.lesson_status']
             ?? cmiData?.['cmi.completion_status']
             ?? 'INCOMPLETE';
         const rawScore = parseFloat(
-            cmiData?.['cmi.core.score.raw'] ?? cmiData?.['cmi.score.raw'] ?? '0'
+            cmiData?.['cmi.core.score.raw'] ?? cmiData?.['cmi.score.raw'] ?? '0',
         ) || 0;
         const sessionTime = cmiData?.['cmi.core.session_time']
             ?? cmiData?.['cmi.session_time']
@@ -246,12 +349,8 @@ class ScormService {
         const sessionSecs = parseScormTime(sessionTime);
         const mappedStatus = mapStatus(rawStatus);
         const now = new Date();
-
-        // Persist session exit data
-        await prisma.scormSession.update({
-            where: { id: sessionId },
-            data: { exitedAt: now, sessionSecs, cmiData, status: mappedStatus, score: rawScore, location },
-        });
+        const isCompleted = ['COMPLETED', 'PASSED'].includes(mappedStatus);
+        const isPassed = mappedStatus === 'PASSED';
 
         const existing = await prisma.lessonProgress.findUnique({
             where: {
@@ -270,15 +369,15 @@ class ScormService {
             },
         });
 
-        const isCompleted = ['COMPLETED', 'PASSED'].includes(mappedStatus);
-        const isPassed = mappedStatus === 'PASSED';
-
         const existingPriority = STATUS_PRIORITY[existing?.scormStatus ?? 'NOT_ATTEMPTED'] ?? 0;
         const newPriority = STATUS_PRIORITY[mappedStatus] ?? 0;
         const finalStatus = newPriority >= existingPriority ? mappedStatus : existing.scormStatus;
         const finalPassed = isPassed || (existing?.scormPassed ?? false);
         const finalScore = rawScore || existing?.scormScore || 0;
-        const accumulatedSecs = (existing?.timeSpentSecs ?? 0) + sessionSecs;
+        const accumulatedSecs = finalizeSession
+            ? (existing?.timeSpentSecs ?? 0) + sessionSecs
+            : Math.max(existing?.timeSpentSecs ?? 0, sessionSecs);
+        const lessonComplete = isCompleted || (existing?.completed ?? false);
 
         await prisma.lessonProgress.upsert({
             where: {
@@ -290,33 +389,50 @@ class ScormService {
             create: {
                 enrollmentId: session.enrollmentId,
                 lessonId: session.lessonId,
-                completed: isCompleted,
-                completedAt: isCompleted ? now : null,
-                scormStatus: finalStatus,
-                scormScore: finalScore,
-                scormPassed: finalPassed,
-                timeSpentSecs: sessionSecs,
-                scormData: cmiData,
-                startedAt: session.launchedAt,
-            },
-            update: {
-                completed: isCompleted || (existing?.completed ?? false),
-                ...(isCompleted && !existing?.completed ? { completedAt: now } : {}),
+                completed: lessonComplete,
+                completedAt: lessonComplete ? now : null,
                 scormStatus: finalStatus,
                 scormScore: finalScore,
                 scormPassed: finalPassed,
                 timeSpentSecs: accumulatedSecs,
                 scormData: cmiData,
+                startedAt: session.launchedAt,
+                location,
+            },
+            update: {
+                completed: lessonComplete,
+                ...(lessonComplete && !existing?.completed ? { completedAt: now } : {}),
+                scormStatus: finalStatus,
+                scormScore: finalScore,
+                scormPassed: finalPassed,
+                timeSpentSecs: accumulatedSecs,
+                scormData: cmiData,
+                location,
             },
         });
 
-        await this._checkCourseCompletion(session.enrollmentId);
+        if (finalizeSession) {
+            await prisma.scormSession.update({
+                where: { id: session.id },
+                data: {
+                    exitedAt: now,
+                    sessionSecs,
+                    cmiData,
+                    status: mappedStatus,
+                    score: rawScore,
+                    location,
+                },
+            });
+        }
+
+        if (lessonComplete) {
+            await this._checkCourseCompletion(session.enrollmentId);
+        }
 
         return {
-            success: true,
             status: finalStatus,
             score: finalScore,
-            sessionSecs,
+            completed: lessonComplete,
             totalSecs: accumulatedSecs,
         };
     }

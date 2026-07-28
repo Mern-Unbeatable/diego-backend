@@ -2,6 +2,7 @@ import { prisma } from '../../config/db.js';
 import { localizeObject } from '../../shared/services/translate/translate.service.js';
 import { slugService } from '../../shared/utils/slug/slug.service.js';
 import { isValidSlug, slugExists } from '../../shared/utils/slug/slug.utils.js';
+import { BadRequestError } from '../../shared/globals/helpers/error-handler.js';
 import { courseDetailSelect, courseListSelect } from './course.utils.js';
 import { assertCanManageCourse } from './course.permission.js';
 
@@ -37,6 +38,8 @@ const buildCourseSearchOrConditions = (searchTerm) => {
 
     return conditions;
 };
+
+const getUserLevel = (user) => user?.level ?? user?.role ?? null;
 
 const resolveLicenseeTenantId = async (user) => {
     if (user?.tenantId) return user.tenantId;
@@ -123,21 +126,19 @@ async function attachCourseListStats(courses = []) {
 export class CourseService {
 
     async getAllCourses(queryParams = {}, locale = 'it', user = null, tenantId = null) {
-        console.log('🔍 Received queryParams:', JSON.stringify(queryParams, null, 2));
-
         const page = parseInt(queryParams.page) || 1;
         const limit = Math.min(parseInt(queryParams.limit) || 20, 100);
         const skip = (page - 1) * limit;
 
         const where = {};
-        const userLevel = user?.level;
+        const userLevel = getUserLevel(user);
         const isPlatformAdmin = userLevel === 'PLATFORM_ADMIN';
         const isLicensee = userLevel === 'LICENSE_USER';
 
         // Tenant + ownership filtering
         if (isLicensee) {
             const licenseetenantId = await resolveLicenseeTenantId(user);
-            if (!licenseetenantId) throw new Error('Licensee user has no tenant assigned. Contact admin.');
+            if (!licenseetenantId) throw new BadRequestError('Licensee user has no tenant assigned. Contact admin.');
             where.tenantId = licenseetenantId;
             where.createdById = user.id;
             if (queryParams.isActive !== undefined) {
@@ -228,9 +229,6 @@ export class CourseService {
             orderBy[sortField] = sortOrder;
         }
 
-        // ===== DEBUG: Log the final where clause =====
-        console.log('📋 Final WHERE clause:', JSON.stringify(where, null, 2));
-
         // ===== EXECUTE QUERY =====
         const [courses, total] = await Promise.all([
             prisma.course.findMany({
@@ -242,8 +240,6 @@ export class CourseService {
             }),
             prisma.course.count({ where }),
         ]);
-
-        console.log(`📊 Found ${courses.length} courses (total: ${total})`);
 
         let processedCourses = courses.map(c => {
                 const localized = localizeObject(c, locale, COURSE_I18N_KEYS);
@@ -289,8 +285,9 @@ export class CourseService {
     }
 
     async getCourseById(id, locale = 'it', user = null, tenantId = null) {
-        const isPlatformAdmin = user?.level === 'PLATFORM_ADMIN';
-        const isLicensee = user?.level === 'LICENSE_USER';
+        const userLevel = getUserLevel(user);
+        const isPlatformAdmin = userLevel === 'PLATFORM_ADMIN';
+        const isLicensee = userLevel === 'LICENSE_USER';
 
         const where = { id };
 
@@ -326,8 +323,9 @@ export class CourseService {
     }
 
     async getCourseBySlug(slug, locale = 'it', user = null, tenantId = null) {
-        const isPlatformAdmin = user?.level === 'PLATFORM_ADMIN';
-        const isLicensee = user?.level === 'LICENSE_USER';
+        const userLevel = getUserLevel(user);
+        const isPlatformAdmin = userLevel === 'PLATFORM_ADMIN';
+        const isLicensee = userLevel === 'LICENSE_USER';
 
         const where = { slug };
 
@@ -373,10 +371,12 @@ export class CourseService {
             rating: r.rating,
             comment: r.comment,
             createdAt: r.createdAt,
-            user: {
-                id: r.user.id,
-                name: `${r.user.firstName || ''} ${r.user.lastName || ''}`.trim() || r.user.email,
-            },
+            user: r.user
+                ? {
+                    id: r.user.id,
+                    name: `${r.user.firstName || ''} ${r.user.lastName || ''}`.trim() || r.user.email,
+                }
+                : { id: null, name: 'Unknown user' },
         }));
 
         delete localized.reviews;
@@ -392,11 +392,15 @@ export class CourseService {
         const coPkg = course.companyPackage;
 
         const pickFeatureLabel = (f) => {
-            // simple i18n-string feature (single-user) vs {label:{...}} feature (company)
-            if (f && typeof f === 'object' && f.label) {
+            if (!f) return null;
+            if (typeof f === 'string') return f;
+            if (typeof f === 'object' && f.label) {
                 return { ...f, label: pick(f.label) };
             }
-            return pick(f);
+            if (typeof f === 'object') {
+                return pick(f);
+            }
+            return null;
         };
 
         return {
@@ -1062,7 +1066,7 @@ export class CourseService {
 
         const where = { createdById: user?.id };
 
-        const userLevel = user?.level;
+        const userLevel = getUserLevel(user);
         const isPlatformAdmin = userLevel === 'PLATFORM_ADMIN';
         const isLicensee = userLevel === 'LICENSE_USER';
 

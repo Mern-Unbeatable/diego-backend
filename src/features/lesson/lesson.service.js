@@ -7,6 +7,12 @@ import {
 } from '../course/course.permission.js';
 import { enrollmentService } from '../enrollment/enrollment.service.js';
 import { certificateService } from '../certificate/certificate.service.js';
+import { BadRequestError, NotFoundError } from '../../shared/globals/helpers/error-handler.js';
+import { ensureScormPackagePrepared, looksLikeScormZipUrl } from '../../shared/scorm/scormPackage.util.js';
+
+const MIN_WATCH_PERCENT = 90;
+const DEFAULT_MIN_READ_SECS = 120;
+const DOCUMENT_TYPES = ['PDF', 'FILE', 'WORD', 'EXCEL'];
 
 const LESSON_I18N_KEYS = ['title'];
 const SCORM_TYPES = ['SCORM', 'SCORM_12'];
@@ -22,16 +28,34 @@ export class LessonService {
         if (this._isScorm(lesson.contentType)) {
             return ['COMPLETED', 'PASSED'].includes(progress.scormStatus);
         }
-        return progress.completed === true;
+        if (progress.completed === true) return true;
+
+        const watchPercent = progress.watchPercent ?? 0;
+        if (watchPercent >= MIN_WATCH_PERCENT) return true;
+
+        const timeSpentSecs = progress.timeSpentSecs ?? 0;
+        const durationSecs = lesson.durationSecs ?? null;
+        const effectiveMinSecs = durationSecs && durationSecs > 0
+            ? durationSecs
+            : (DOCUMENT_TYPES.includes(lesson.contentType) ? DEFAULT_MIN_READ_SECS : null);
+
+        if (effectiveMinSecs != null) {
+            return timeSpentSecs >= Math.ceil(effectiveMinSecs * (MIN_WATCH_PERCENT / 100));
+        }
+
+        return false;
     }
 
     /** SEQUENTIAL = previous required lessons must be done; FREE = all open; LOCKED_FINAL = same as FREE until final test */
     _isLessonAccessible(lesson, sortedLessons, progressMap, navigationMode = 'SEQUENTIAL') {
-        if (lesson.isLocked) return false;
-        if (navigationMode === 'FREE' || navigationMode === 'LOCKED_FINAL') return true;
+        if (navigationMode === 'FREE' || navigationMode === 'LOCKED_FINAL') {
+            if (lesson.isLocked) return false;
+            return true;
+        }
 
         const idx = sortedLessons.findIndex(l => l.id === lesson.id);
-        if (idx <= 0) return true;
+        if (idx < 0) return false;
+        if (idx === 0 && lesson.isLocked) return false;
 
         for (let i = 0; i < idx; i++) {
             const prev = sortedLessons[i];
@@ -63,6 +87,8 @@ export class LessonService {
             scormPackageUrl: isScorm ? (lesson.scormPackageUrl ?? null) : null,
             scormEntryPoint: isScorm ? (lesson.scormEntryPoint ?? null) : null,
             timeSpentSecs: progress?.timeSpentSecs ?? 0,
+            watchPercent: progress?.watchPercent ?? 0,
+            lastPositionSecs: progress?.lastPositionSecs ?? 0,
             startedAt: progress?.startedAt ?? null,
             completedAt: progress?.completedAt ?? null,
             scormStatus: isScorm ? (progress?.scormStatus ?? 'NOT_ATTEMPTED') : null,
@@ -88,7 +114,7 @@ export class LessonService {
                 navigationMode: true,
             },
         });
-        if (!course) throw new Error('Course not found');
+        if (!course) throw new NotFoundError('Course not found');
 
         if (user) await assertCanAccessCourse(course, user, prisma);
 
@@ -182,20 +208,43 @@ export class LessonService {
             where: { id: courseId },
             select: { id: true, slug: true, tenantId: true, createdById: true, isActive: true },
         });
-        if (!course) throw new Error('Course not found');
+        if (!course) throw new NotFoundError('Course not found');
         if (user) assertCanManageCourse(course, user, 'add lessons to');
 
         if (['SCORM', 'SCORM_12'].includes(data.contentType)) {
-            if (!data.scormPackageUrl) throw new Error('scormPackageUrl is required for SCORM lessons');
-            if (!data.scormEntryPoint) throw new Error('scormEntryPoint is required for SCORM lessons (e.g., "index_lms.html")');
+            if (!data.scormPackageUrl) throw new BadRequestError('scormPackageUrl is required for SCORM lessons');
+        }
+
+        if (['SCORM', 'SCORM_12'].includes(data.contentType) && data.scormPackageUrl) {
+            try {
+                const prepared = await ensureScormPackagePrepared(
+                    data.scormPackageUrl,
+                    data.scormEntryPoint,
+                    data.scormVersion ?? '1.2',
+                );
+                data.scormPackageUrl = prepared.scormPackageUrl;
+                data.scormEntryPoint = prepared.scormEntryPoint;
+            } catch (error) {
+                throw new BadRequestError(error.message || 'Failed to prepare SCORM package');
+            }
+        }
+
+        if (['SCORM', 'SCORM_12'].includes(data.contentType) && looksLikeScormZipUrl(data.scormPackageUrl)) {
+            throw new BadRequestError(
+                'SCORM package could not be extracted. Upload a single SCORM .zip (not AllGolfExamples bundle) and ensure unzip is installed on the server.',
+            );
+        }
+
+        if (['SCORM', 'SCORM_12'].includes(data.contentType) && !data.scormEntryPoint) {
+            throw new BadRequestError('scormEntryPoint could not be resolved for this SCORM package');
         }
 
         const nonScormTypes = ['PDF', 'WORD', 'EXCEL', 'VIDEO_UPLOAD', 'FILE'];
         if (nonScormTypes.includes(data.contentType) && !data.contentUrl) {
-            throw new Error('contentUrl is required for this lesson type');
+            throw new BadRequestError('contentUrl is required for this lesson type');
         }
         if (data.contentType === 'VIDEO_YOUTUBE' && !data.youtubeUrl) {
-            throw new Error('youtubeUrl is required for VIDEO_YOUTUBE lessons');
+            throw new BadRequestError('youtubeUrl is required for VIDEO_YOUTUBE lessons');
         }
 
         if (data.orderIndex === undefined) {
@@ -238,15 +287,51 @@ export class LessonService {
                 id: true,
                 courseId: true,
                 contentType: true,
+                scormPackageUrl: true,
+                scormEntryPoint: true,
+                scormVersion: true,
                 course: { select: { id: true, tenantId: true, createdById: true, isActive: true } },
             },
         });
-        if (!lesson) throw new Error('Lesson not found');
+        if (!lesson) throw new NotFoundError('Lesson not found');
         if (user) assertCanManageCourse(lesson.course, user, 'update lessons in');
         const newType = data.contentType ?? lesson.contentType;
         if (['SCORM', 'SCORM_12'].includes(newType)) {
             if (data.scormPackageUrl === null || data.scormPackageUrl === '') {
-                throw new Error('scormPackageUrl cannot be empty for SCORM lessons');
+                throw new BadRequestError('scormPackageUrl cannot be empty for SCORM lessons');
+            }
+        }
+
+        const scormPackageCandidate = data.scormPackageUrl ?? lesson.scormPackageUrl;
+        const shouldPrepareScorm = ['SCORM', 'SCORM_12'].includes(newType)
+            && scormPackageCandidate
+            && (
+                data.scormPackageUrl
+                || looksLikeScormZipUrl(scormPackageCandidate)
+            );
+
+        if (shouldPrepareScorm) {
+            try {
+                const prepared = await ensureScormPackagePrepared(
+                    scormPackageCandidate,
+                    data.scormEntryPoint ?? lesson.scormEntryPoint,
+                    data.scormVersion ?? lesson.scormVersion ?? '1.2',
+                );
+                data.scormPackageUrl = prepared.scormPackageUrl;
+                if (!data.scormEntryPoint) {
+                    data.scormEntryPoint = prepared.scormEntryPoint;
+                }
+            } catch (error) {
+                throw new BadRequestError(error.message || 'Failed to prepare SCORM package');
+            }
+        }
+
+        if (['SCORM', 'SCORM_12'].includes(newType)) {
+            const finalPackageUrl = data.scormPackageUrl ?? lesson.scormPackageUrl;
+            if (looksLikeScormZipUrl(finalPackageUrl)) {
+                throw new BadRequestError(
+                    'SCORM package is still stored as .zip. Re-upload the package or fix server extraction.',
+                );
             }
         }
 
@@ -382,6 +467,7 @@ export class LessonService {
                 isRequired: true,
                 isLocked: true,
                 orderIndex: true,
+                durationSecs: true,
                 course: {
                     select: {
                         id: true,
@@ -403,7 +489,10 @@ export class LessonService {
             );
         }
 
-        if (lesson.isLocked) {
+        if (
+            lesson.isLocked
+            && ['FREE', 'LOCKED_FINAL'].includes(lesson.course.navigationMode)
+        ) {
             throw new Error('This lesson is locked');
         }
 
@@ -427,7 +516,13 @@ export class LessonService {
             }),
             prisma.lessonProgress.findMany({
                 where: { enrollmentId: enrollment.id },
-                select: { lessonId: true, completed: true, scormStatus: true },
+                select: {
+                    lessonId: true,
+                    completed: true,
+                    scormStatus: true,
+                    watchPercent: true,
+                    timeSpentSecs: true,
+                },
             }),
         ]);
         const progressMap = new Map(allProgress.map(p => [p.lessonId, p]));
@@ -436,8 +531,51 @@ export class LessonService {
             throw new Error('Complete previous required lessons before accessing this one');
         }
 
-        const isCompleted = progressData.completed ?? false;
-        const timeSpentSecs = progressData.timeSpentSecs ?? 0;
+        const requestedCompleted = progressData.completed ?? false;
+        const requestedTimeSpent = progressData.timeSpentSecs ?? 0;
+        const requestedWatchPercent = progressData.watchPercent ?? undefined;
+        const requestedLastPosition = progressData.lastPositionSecs ?? undefined;
+
+        const existingProgress = await prisma.lessonProgress.findUnique({
+            where: {
+                enrollmentId_lessonId: { enrollmentId: enrollment.id, lessonId },
+            },
+            select: {
+                timeSpentSecs: true,
+                watchPercent: true,
+                lastPositionSecs: true,
+                completed: true,
+                completedAt: true,
+            },
+        });
+
+        const watchPercent = Math.max(
+            existingProgress?.watchPercent ?? 0,
+            requestedWatchPercent ?? 0,
+        );
+        const lastPositionSecs = requestedLastPosition != null
+            ? Math.max(existingProgress?.lastPositionSecs ?? 0, requestedLastPosition)
+            : (existingProgress?.lastPositionSecs ?? 0);
+
+        const durationSecs = lesson.durationSecs ?? null;
+        const timeSpentSecs = Math.max(
+            existingProgress?.timeSpentSecs ?? 0,
+            requestedTimeSpent,
+            lastPositionSecs,
+            durationSecs && watchPercent >= MIN_WATCH_PERCENT
+                ? Math.ceil(durationSecs * (watchPercent / 100))
+                : 0,
+        );
+
+        const effectiveMinSecs = durationSecs && durationSecs > 0
+            ? durationSecs
+            : (DOCUMENT_TYPES.includes(lesson.contentType) ? DEFAULT_MIN_READ_SECS : null);
+        const meetsWatchThreshold = watchPercent >= MIN_WATCH_PERCENT
+            || (effectiveMinSecs != null && timeSpentSecs >= Math.ceil(effectiveMinSecs * (MIN_WATCH_PERCENT / 100)));
+
+        const isCompleted = requestedCompleted
+            || (existingProgress?.completed ?? false)
+            || meetsWatchThreshold;
 
         const progress = await prisma.lessonProgress.upsert({
             where: {
@@ -449,12 +587,18 @@ export class LessonService {
                 completed: isCompleted,
                 completedAt: isCompleted ? new Date() : null,
                 timeSpentSecs,
+                watchPercent,
+                lastPositionSecs,
                 startedAt: new Date(),
             },
             update: {
                 completed: isCompleted,
-                completedAt: isCompleted ? new Date() : undefined,
+                completedAt: isCompleted && !existingProgress?.completed
+                    ? new Date()
+                    : existingProgress?.completedAt,
                 timeSpentSecs,
+                watchPercent,
+                lastPositionSecs,
             },
         });
 
@@ -480,7 +624,7 @@ export class LessonService {
                 navigationMode: true,
             },
         });
-        if (!course) throw new Error('Course not found');
+        if (!course) throw new NotFoundError('Course not found');
         if (user) await assertCanAccessCourse(course, user, prisma);
 
         const enrollment = await prisma.enrollment.findUnique({
@@ -497,6 +641,8 @@ export class LessonService {
                     where: { enrollmentId: enrollment.id },
                     select: {
                         timeSpentSecs: true,
+                        watchPercent: true,
+                        lastPositionSecs: true,
                         completed: true,
                         completedAt: true,
                         startedAt: true,
@@ -569,7 +715,10 @@ export class LessonService {
                 requiredLessons: requiredLessons.length,
                 completedRequiredLessons: completedRequired,
                 percentage: totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0,
-                totalTimeSpentSecs: rows.reduce((s, r) => s + r.timeSpentSecs, 0),
+                totalTimeSpentSecs: rows.reduce(
+                    (s, r) => s + Math.max(r.timeSpentSecs ?? 0, r.lastPositionSecs ?? 0),
+                    0,
+                ),
             },
             lessons: rows,
         };
@@ -681,7 +830,7 @@ export class LessonService {
         const localizedLesson = localizeObject(lessonScalars, locale, LESSON_I18N_KEYS);
 
         // ✅ FIX: Localize course title separately
-        const localizedCourseTitle = localizeObject(course.courseTitle, locale);
+        const localizedCourseTitle = t(course.courseTitle, locale);
 
         return {
             ...localizedLesson,
@@ -834,6 +983,7 @@ export class LessonService {
                 scormScore: true,
                 scormPassed: true,
                 timeSpentSecs: true,
+                watchPercent: true,
             },
         });
         const progressMap = new Map(allProgress.map(p => [p.lessonId, p]));

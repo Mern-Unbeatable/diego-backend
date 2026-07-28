@@ -57,3 +57,9 @@ export const bulkEnrollSchema = z.object({
     courseId: z.string().uuid('Invalid course ID format'),
     expiresAt: z.coerce.date().optional(),
 });
+
+export const antiCheatLogSchema = z.object({
+    lessonId: z.string().uuid('Invalid lesson ID').optional(),
+    eventType: z.enum(['MOUSE_IDLE', 'TAB_CHANGE', 'WINDOW_BLUR', 'FULLSCREEN_EXIT']),
+    metadata: z.record(z.any()).optional(),
+});

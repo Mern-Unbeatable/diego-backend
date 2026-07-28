@@ -14,6 +14,9 @@ import {
     pickLocalizedTitle,
 } from './enrollment.utils.js';
 
+const effectiveLessonTimeSecs = (record) =>
+    Math.max(record?.timeSpentSecs ?? 0, record?.lastPositionSecs ?? 0);
+
 class EnrollmentService {
 
     async _resolveTenantId(user) {
@@ -73,7 +76,13 @@ class EnrollmentService {
 
         const progressRecords = await prisma.lessonProgress.findMany({
             where: { enrollmentId, lessonId: { in: lessons.map(l => l.id) } },
-            select: { lessonId: true, completed: true, scormStatus: true, timeSpentSecs: true },
+            select: {
+                lessonId: true,
+                completed: true,
+                scormStatus: true,
+                timeSpentSecs: true,
+                lastPositionSecs: true,
+            },
         });
         const progressMap = new Map(progressRecords.map(p => [p.lessonId, p]));
 
@@ -86,7 +95,10 @@ class EnrollmentService {
             return p.completed === true;
         }).length;
 
-        const totalTimeSpentSecs = progressRecords.reduce((sum, p) => sum + (p.timeSpentSecs ?? 0), 0);
+        const totalTimeSpentSecs = progressRecords.reduce(
+            (sum, p) => sum + effectiveLessonTimeSecs(p),
+            0,
+        );
 
         return {
             totalLessons: lessons.length,
@@ -532,13 +544,26 @@ class EnrollmentService {
 
         const isCompleted = data.completed ?? true;
         const timeSpentSecs = data.timeSpentSecs ?? 0;
+        const watchPercent = data.watchPercent ?? undefined;
+        const lastPositionSecs = data.lastPositionSecs ?? undefined;
+
+        const existing = await prisma.lessonProgress.findUnique({
+            where: { enrollmentId_lessonId: { enrollmentId, lessonId } },
+            select: { timeSpentSecs: true, watchPercent: true, lastPositionSecs: true, completed: true, completedAt: true },
+        });
 
         const progress = await prisma.lessonProgress.upsert({
             where: { enrollmentId_lessonId: { enrollmentId, lessonId } },
             update: {
-                completed: isCompleted,
-                completedAt: isCompleted ? new Date() : null,
-                timeSpentSecs,
+                completed: isCompleted || (existing?.completed ?? false),
+                completedAt: (isCompleted || existing?.completed) ? (existing?.completedAt ?? new Date()) : null,
+                timeSpentSecs: Math.max(existing?.timeSpentSecs ?? 0, timeSpentSecs),
+                watchPercent: watchPercent != null
+                    ? Math.max(existing?.watchPercent ?? 0, watchPercent)
+                    : existing?.watchPercent ?? 0,
+                lastPositionSecs: lastPositionSecs != null
+                    ? Math.max(existing?.lastPositionSecs ?? 0, lastPositionSecs)
+                    : existing?.lastPositionSecs ?? 0,
             },
             create: {
                 enrollmentId,
@@ -546,15 +571,62 @@ class EnrollmentService {
                 completed: isCompleted,
                 completedAt: isCompleted ? new Date() : null,
                 timeSpentSecs,
+                watchPercent: watchPercent ?? 0,
+                lastPositionSecs: lastPositionSecs ?? 0,
                 startedAt: new Date(),
             },
         });
 
-        if (isCompleted) {
+        if (isCompleted || progress.completed) {
             await this.checkAndUpdateEnrollmentStatus(enrollmentId);
         }
 
         return progress;
+    }
+
+    async logAntiCheatEvent(enrollmentId, userId, payload) {
+        const enrollment = await prisma.enrollment.findUnique({
+            where: { id: enrollmentId },
+            select: {
+                id: true,
+                userId: true,
+                status: true,
+                expiresAt: true,
+                courseId: true,
+            },
+        });
+
+        if (!enrollment) throw new Error('Enrollment not found');
+        if (enrollment.userId !== userId) {
+            throw new Error('Permission denied: You can only log events for your own enrollment');
+        }
+        if (['EXPIRED', 'SUSPENDED'].includes(enrollment.status)) {
+            throw new Error('Enrollment is not active');
+        }
+        if (enrollment.expiresAt < new Date()) {
+            throw new Error('Course access has expired');
+        }
+
+        if (payload.lessonId) {
+            const lesson = await prisma.lesson.findUnique({
+                where: { id: payload.lessonId },
+                select: { id: true, courseId: true },
+            });
+            if (!lesson || lesson.courseId !== enrollment.courseId) {
+                throw new Error('Lesson does not belong to this enrollment course');
+            }
+        }
+
+        const log = await prisma.antiCheatLog.create({
+            data: {
+                enrollmentId,
+                lessonId: payload.lessonId ?? null,
+                eventType: payload.eventType,
+                metadata: payload.metadata ?? null,
+            },
+        });
+
+        return log;
     }
     async checkAndUpdateEnrollmentStatus(enrollmentId) {
         const enrollment = await prisma.enrollment.findUnique({
@@ -1159,7 +1231,13 @@ class EnrollmentService {
                     select: { id: true, status: true, issuedAt: true, pdfUrl: true },
                 },
                 lessonProgress: {
-                    select: { lessonId: true, completed: true, scormStatus: true, timeSpentSecs: true },
+                    select: {
+                        lessonId: true,
+                        completed: true,
+                        scormStatus: true,
+                        timeSpentSecs: true,
+                        lastPositionSecs: true,
+                    },
                 },
                 quizAttempts: {
                     orderBy: { attemptedAt: 'desc' },
@@ -1192,7 +1270,10 @@ class EnrollmentService {
                 if (p.scormStatus && ['COMPLETED', 'PASSED'].includes(p.scormStatus)) return true;
                 return p.completed === true;
             }).length;
-            const totalTime = enrollment.lessonProgress.reduce((s, p) => s + (p.timeSpentSecs ?? 0), 0);
+            const totalTime = enrollment.lessonProgress.reduce(
+                (s, p) => s + effectiveLessonTimeSecs(p),
+                0,
+            );
 
             const bestQuizByType = {};
             for (const attempt of enrollment.quizAttempts) {
@@ -1395,7 +1476,9 @@ class EnrollmentService {
                 completed: done,
                 scormStatus: isScorm ? (p.scormStatus ?? 'NOT_ATTEMPTED') : null,
                 scormScore: isScorm ? p.scormScore : null,
-                timeSpentSecs: p.timeSpentSecs ?? 0,
+                timeSpentSecs: effectiveLessonTimeSecs(p),
+                watchPercent: p.watchPercent ?? 0,
+                lastPositionSecs: p.lastPositionSecs ?? 0,
                 startedAt: p.startedAt,
                 completedAt: p.completedAt,
             };

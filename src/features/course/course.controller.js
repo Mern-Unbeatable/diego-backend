@@ -1,6 +1,7 @@
 import { Logger } from '../../config/logger.js';
 import { catchAsync } from '../../shared/globals/decorators/catch-async.js';
 import { ResponseHandler } from '../../shared/globals/helpers/response.handler.js';
+import { NotFoundError } from '../../shared/globals/helpers/error-handler.js';
 import { courseService } from './course.service.js';
 import {
     createCourseSchema,
@@ -25,14 +26,14 @@ class CourseController {
     getCourseById = catchAsync(async (req, res) => {
         const tenantId = req.tenantId;
         const course = await courseService.getCourseById(req.params.id, req.locale, req.user, tenantId);
-        if (!course) throw new Error('Course not found');
+        if (!course) throw new NotFoundError('Course not found');
         ResponseHandler.success(res, { message: 'Course fetched successfully', data: { course } });
     });
 
     getCourseBySlug = catchAsync(async (req, res) => {
         const tenantId = req.tenantId;
         const course = await courseService.getCourseBySlug(req.params.slug, req.locale, req.user, tenantId);
-        if (!course) throw new Error('Course not found');
+        if (!course) throw new NotFoundError('Course not found');
         ResponseHandler.success(res, { message: 'Course fetched successfully', data: { course } });
     });
 

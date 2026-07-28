@@ -32,7 +32,7 @@ class AuthController {
   }
 
   _setAuthCookies(res, accessToken, refreshToken) {
-    const secure = config.NODE_ENV == 'development';
+    const secure = config.NODE_ENV === 'production';
     res.cookie('accessToken', accessToken, {
       httpOnly: true, secure, sameSite: 'lax', maxAge: 30 * 24 * 60 * 60 * 1000
     });
@@ -295,7 +295,7 @@ class AuthController {
 
     res.cookie('accessToken', newAccessToken, {
       httpOnly: true,
-      secure: config.NODE_ENV !== 'development',
+      secure: config.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: 15 * 60 * 1000,
     });
@@ -313,7 +313,7 @@ class AuthController {
 
   signOut = catchAsync(async (req, res) => {
     const cookieOptions = {
-      httpOnly: true, secure: config.NODE_ENV !== 'development', sameSite: 'lax', path: '/',
+      httpOnly: true, secure: config.NODE_ENV === 'production', sameSite: 'lax', path: '/',
     };
     res.clearCookie('accessToken', cookieOptions);
     res.clearCookie('refreshToken', cookieOptions);

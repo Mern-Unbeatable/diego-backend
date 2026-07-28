@@ -48,10 +48,6 @@ export const baseLessonSchema = z.object({
         { message: 'scormPackageUrl is required for SCORM lessons', path: ['scormPackageUrl'] }
     )
     .refine(
-        data => TRACKED_TYPES.includes(data.contentType) ? !!data.scormEntryPoint : true,
-        { message: 'scormEntryPoint is required for SCORM lessons (e.g. "index_lms.html")', path: ['scormEntryPoint'] }
-    )
-    .refine(
         data => data.contentType === 'VIDEO_YOUTUBE' ? !!data.youtubeUrl : true,
         { message: 'youtubeUrl is required for VIDEO_YOUTUBE lessons', path: ['youtubeUrl'] }
     )
@@ -113,8 +109,10 @@ export const reorderLessonsSchema = z.object({
 
 
 export const trackProgressSchema = z.object({
-    completed: z.coerce.boolean().default(false),
-    timeSpentSecs: z.coerce.number().int().min(0, 'Time cannot be negative').default(0),
+    completed: z.coerce.boolean().optional().default(false),
+    timeSpentSecs: z.coerce.number().int().min(0, 'Time cannot be negative').optional().default(0),
+    watchPercent: z.coerce.number().int().min(0).max(100).optional(),
+    lastPositionSecs: z.coerce.number().int().min(0).optional(),
 });
 
 export const scormLaunchSchema = z.object({

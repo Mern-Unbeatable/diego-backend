@@ -10,6 +10,7 @@
     "postinstall": "prisma generate",
     "prisma:deploy": "prisma migrate deploy",
     "dev": "nodemon src/bootstrap.js",
+    "dev:clean": "sh -c 'fuser -k 5000/tcp 2>/dev/null || true; exec nodemon src/bootstrap.js'",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

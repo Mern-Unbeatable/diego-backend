@@ -1,3 +1,8 @@
+import {
+    ForbiddenError,
+    UnauthorizedError,
+} from '../../shared/globals/helpers/error-handler.js';
+
 /**
  * Course access rules (client requirement):
  *
@@ -25,17 +30,17 @@ export const isCourseManager = (user) =>
     user?.level === 'LICENSE_USER' || user?.level === 'PLATFORM_ADMIN';
 
 export const assertCourseOwner = (course, user, action = 'manage') => {
-    if (!user?.id) throw new Error('Authentication required');
+    if (!user?.id) throw new UnauthorizedError('Authentication required');
     if (!isCourseOwner(course, user.id)) {
-        throw new Error(`Permission denied: only the course creator can ${action} this course`);
+        throw new ForbiddenError(`Permission denied: only the course creator can ${action} this course`);
     }
 };
 
 /** Lesson/course CRUD — PLATFORM_ADMIN and LICENSE_USER, creator only */
 export const assertCanManageCourse = (course, user, action = 'manage') => {
-    if (!user?.id) throw new Error('Authentication required');
+    if (!user?.id) throw new UnauthorizedError('Authentication required');
     if (!isCourseManager(user)) {
-        throw new Error(
+        throw new ForbiddenError(
             `Permission denied: only Platform Admin or License User can ${action} this course`
         );
     }
@@ -60,7 +65,7 @@ export const assertCanAccessCourse = async (course, user, prisma) => {
             select: { id: true },
         });
         if (!teacherCourse) {
-            throw new Error('Permission denied: You are not the teacher of this course');
+            throw new ForbiddenError('Permission denied: You are not the teacher of this course');
         }
         return;
     }
@@ -70,7 +75,7 @@ export const assertCanAccessCourse = async (course, user, prisma) => {
             where: { userId_courseId: { userId: user.id, courseId: course.id } },
             select: { id: true },
         });
-        if (!enrollment) throw new Error('This course is not active');
+        if (!enrollment) throw new ForbiddenError('This course is not active');
     }
 };
 
