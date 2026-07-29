@@ -15,7 +15,9 @@ import {
 import {
     ensureScormPackagePrepared,
     looksLikeScormZipUrl,
+    readManifestEntryPoint,
     shouldExtractScormZip,
+    urlToLocalPath,
 } from '../../shared/scorm/scormPackage.util.js';
 
 const log = new Logger('ScormService');
@@ -35,33 +37,37 @@ const resolvePlayerEntryPoint = (entryPoint) => {
     return normalized;
 };
 
+const resolveLocalUploadFile = (packageBase, ...segments) => {
+    const localFolder = urlToLocalPath(packageBase);
+    if (!localFolder) return null;
+
+    const candidate = path.join(localFolder, ...segments);
+    if (fs.existsSync(candidate)) return candidate;
+
+    const relativeFromUploads = path.relative(path.join(process.cwd(), 'uploads'), localFolder);
+    const srcCandidate = path.join(process.cwd(), 'src', 'uploads', relativeFromUploads, ...segments);
+    if (fs.existsSync(srcCandidate)) return srcCandidate;
+
+    return null;
+};
+
 const resolveScormContentUrl = (packageUrl, entryPoint) => {
     const packageBase = packageUrl.replace(/\/$/, '');
     const preferredEntry = resolvePlayerEntryPoint(entryPoint);
-    const folderMatch = packageBase.match(/\/uploads\/scorm\/([^/?#]+)/i);
 
-    if (folderMatch) {
-        const preferredLocalPath = path.join(
-            process.cwd(),
-            'uploads',
-            'scorm',
-            folderMatch[1],
-            preferredEntry,
-        );
-        if (fs.existsSync(preferredLocalPath)) {
-            return `${packageBase}/${preferredEntry}`;
-        }
+    if (resolveLocalUploadFile(packageBase, preferredEntry)) {
+        return `${packageBase}/${preferredEntry}`;
+    }
 
-        const srcPreferredLocalPath = path.join(
-            process.cwd(),
-            'src',
-            'uploads',
-            'scorm',
-            folderMatch[1],
-            preferredEntry,
-        );
-        if (fs.existsSync(srcPreferredLocalPath)) {
-            return `${packageBase}/${preferredEntry}`;
+    if (entryPoint && resolveLocalUploadFile(packageBase, entryPoint)) {
+        return `${packageBase}/${entryPoint}`;
+    }
+
+    const localFolder = urlToLocalPath(packageBase);
+    if (localFolder) {
+        const manifestEntry = readManifestEntryPoint(localFolder);
+        if (manifestEntry && resolveLocalUploadFile(packageBase, manifestEntry)) {
+            return `${packageBase}/${manifestEntry}`;
         }
     }
 
@@ -75,20 +81,14 @@ const resolveScormPlayerContentUrl = (packageBase) => {
         );
     }
 
-    const folderMatch = packageBase.match(/\/uploads\/scorm\/([^/?#]+)/i);
+    const normalizedBase = packageBase.replace(/\/$/, '');
     const firstPage = 'Playing/Playing.html';
 
-    if (folderMatch) {
-        const localCandidates = [
-            path.join(process.cwd(), 'uploads', 'scorm', folderMatch[1], firstPage),
-            path.join(process.cwd(), 'src', 'uploads', 'scorm', folderMatch[1], firstPage),
-        ];
-        if (localCandidates.some((candidate) => fs.existsSync(candidate))) {
-            return `${packageBase}/${firstPage}`;
-        }
+    if (resolveLocalUploadFile(normalizedBase, firstPage)) {
+        return `${normalizedBase}/${firstPage}`;
     }
 
-    return resolveScormContentUrl(packageBase, 'shared/lms-launchpage.html');
+    return resolveScormContentUrl(normalizedBase, 'shared/lms-launchpage.html');
 };
 
 const mapStatus = (raw) => STATUS_MAP[raw?.toLowerCase()] ?? 'UNKNOWN';
@@ -206,7 +206,7 @@ class ScormService {
 
         return {
             sessionId: session.id,
-            playerUrl: `${apiBase}/api/v1/scorm/player/${session.id}`,
+            playerUrl: `/api/v1/scorm/player/${session.id}`,
             scormVersion: lesson.scormVersion ?? '1.2',
             scormEntryPoint,
             scormPackageUrl,

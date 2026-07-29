@@ -10,11 +10,30 @@ import { config } from '../../config/config.js';
 const SCORM_FRAME_ANCESTORS =
   "frame-ancestors 'self' http://localhost:5173 http://localhost:5174 https://diego.maktechgroup.tech";
 
+const rewriteUrlForRequestOrigin = (absoluteUrl, req) => {
+    if (!absoluteUrl || !req) return absoluteUrl;
+
+    try {
+        const parsed = new URL(absoluteUrl);
+        const requestOrigin = `${req.protocol}://${req.get('host')}`;
+        const backendOrigin = new URL(config.getApiBaseUrl()).origin;
+
+        if (parsed.origin === backendOrigin && requestOrigin !== backendOrigin) {
+            return `${requestOrigin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+        }
+    } catch {
+        // keep original URL
+    }
+
+    return absoluteUrl;
+};
+
 class ScormController {
 
     renderPlayer = catchAsync(async (req, res) => {
         const { sessionId } = req.params;
         const context = await scormService.getPlayerContext(sessionId);
+        const contentUrl = rewriteUrlForRequestOrigin(context.contentUrl, req);
 
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.setHeader('Content-Security-Policy', SCORM_FRAME_ANCESTORS);
@@ -22,8 +41,8 @@ class ScormController {
         res.send(
             buildScormPlayerHtml({
                 sessionId: context.sessionId,
-                contentUrl: context.contentUrl,
-                apiBaseUrl: config.getApiBaseUrl(),
+                contentUrl,
+                apiBaseUrl: `${req.protocol}://${req.get('host')}`,
                 resumeData: context.resumeData,
                 lastStatus: context.lastStatus,
             }),

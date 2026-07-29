@@ -227,6 +227,18 @@ export class CertificateService {
             prisma.certificate.count({ where }),
         ]);
 
+        let archive = null;
+        if (user?.level === 'COMPANY_ADMIN') {
+            const archiveSubscription = await getActiveArchiveSubscription(user.id);
+            const archivePlan = await getArchivePlan(locale);
+            archive = {
+                hasActiveSubscription: Boolean(archiveSubscription),
+                expiresAt: archiveSubscription?.expiresAt ?? null,
+                freeDownloadDays: archivePlan.freeDownloadDays,
+                plan: archivePlan,
+            };
+        }
+
         return {
             meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
             appliedFilters: {
@@ -237,7 +249,9 @@ export class CertificateService {
                 courseId: queryParams.courseId ?? null,
                 status: queryParams.status ?? null,
                 year: queryParams.year ?? null,
+                archived: queryParams.archived ?? null,
             },
+            ...(archive && { archive }),
             certificates: certificates.map(cert => this._formatCertificate(cert, locale)),
         };
     }
