@@ -3,6 +3,7 @@ import { authMiddleware } from '../../shared/globals/helpers/auth-middleware.js'
 import { i18nMiddleware } from '../../shared/globals/helpers/I18n.middleware.js';
 import { enrollmentController } from './enrollment.controller.js';
 import { tenantGuard } from '../../shared/globals/helpers/tenant.middleware.js';
+import { uploadParticipantSignature } from '../../shared/upload/upload.presets.js';
 
 const router = express.Router({ mergeParams: true });
 
@@ -16,6 +17,15 @@ router.get('/my', enrollmentController.getMyEnrollments);
 router.get('/my-progress/:courseId', enrollmentController.getMyProgress);
 router.post('/my-progress/:courseId/ensure-certificate', enrollmentController.ensureMyCertificate);
 router.post('/:enrollmentId/anti-cheat', enrollmentController.logAntiCheat);
+router.post(
+    '/:enrollmentId/participant-signature',
+    uploadParticipantSignature,
+    enrollmentController.uploadParticipantSignature,
+);
+router.patch(
+    '/:enrollmentId/training-report/confirm',
+    enrollmentController.confirmTrainingReport,
+);
 
 // ── License user dashboard & student management ──
 router.get('/licensee/overview', adminGuard, tenantGuard, enrollmentController.getLicenseeOverview);

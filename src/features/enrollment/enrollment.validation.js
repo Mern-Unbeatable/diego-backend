@@ -63,3 +63,17 @@ export const antiCheatLogSchema = z.object({
     eventType: z.enum(['MOUSE_IDLE', 'TAB_CHANGE', 'WINDOW_BLUR', 'FULLSCREEN_EXIT']),
     metadata: z.record(z.any()).optional(),
 });
+
+export const redeemAccessLinkSchema = z.object({
+    firstName: z.string().min(1, 'First name is required'),
+    lastName: z.string().min(1, 'Last name is required'),
+    birthDate: z.coerce.date(),
+    birthPlace: z.string().optional(),
+    taxCode: z.string().min(1, 'Tax code is required'),
+    address: z.string().min(1, 'Address is required'),
+    email: z.string().email().optional(),
+    companyName: z.string().optional(),
+    companyAddress: z.string().optional(),
+    companyTaxId: z.string().optional(),
+    companyVatNumber: z.string().optional(),
+});

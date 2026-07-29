@@ -211,3 +211,14 @@ export const uploadServiceRequestFiles = createUploadMiddleware([
         required: false,
     },
 ]);
+
+export const uploadParticipantSignature = createUploadMiddleware([
+    {
+        name: 'signature',
+        folder: 'enrollments/signatures',
+        type: 'image',
+        maxCount: 1,
+        maxSizeMB: 5,
+        required: true,
+    },
+]);

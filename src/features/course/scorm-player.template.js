@@ -153,7 +153,13 @@ export const buildScormPlayerHtml = ({
       }
 
       window.API = {
-        LMSInitialize: function () { return 'true'; },
+        LMSInitialize: function () {
+          if (cmi['cmi.core.lesson_status'] === 'not attempted') {
+            cmi['cmi.core.lesson_status'] = 'incomplete';
+            commitRuntime();
+          }
+          return 'true';
+        },
         LMSFinish: function () {
           finishRuntime();
           return 'true';

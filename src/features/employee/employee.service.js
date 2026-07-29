@@ -1,6 +1,7 @@
 import { prisma } from '../../config/db.js';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
+import { addYears } from 'date-fns';
 import { emailService } from '../../shared/services/emails/emailService.js';
 import { config } from '../../config/config.js';
 import { certificateService } from '../certificate/certificate.service.js';
@@ -1976,7 +1977,21 @@ class EmployeeService {
         const lessonProgressCount = employee.user.enrollments.reduce((a, e) => a + e.lessonProgress.length, 0);
 
         await prisma.$transaction(async (tx) => {
+            const { isWithinRetentionPeriod } = await import('../../shared/services/retention.service.js');
+
             for (const enrollment of employee.user.enrollments) {
+                const logs = await tx.antiCheatLog.findMany({
+                    where: { enrollmentId: enrollment.id },
+                    select: { id: true, retentionUntil: true, occurredAt: true },
+                });
+                const protectedLogs = logs.filter((log) =>
+                    isWithinRetentionPeriod(log.retentionUntil || addYears(log.occurredAt, 5)),
+                );
+                if (protectedLogs.length > 0) {
+                    throw new Error(
+                        `Cannot permanently remove employee: ${protectedLogs.length} anti-cheat log(s) are within the 5-year legal retention period`,
+                    );
+                }
                 await tx.antiCheatLog.deleteMany({ where: { enrollmentId: enrollment.id } });
                 await tx.scormSession.deleteMany({ where: { enrollmentId: enrollment.id } });
                 await tx.quizAttempt.deleteMany({ where: { enrollmentId: enrollment.id } });

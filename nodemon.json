@@ -1,7 +1,9 @@
 {
   "watch": ["src"],
   "ext": "js,json",
+  "delay": 1500,
   "ignore": [
+    "uploads",
     "uploads/**",
     "node_modules/**",
     "coverage/**",

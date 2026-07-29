@@ -713,6 +713,10 @@ model Enrollment {
   paymentId           String?   @unique
   payment             Payment?  @relation(fields: [paymentId], references: [id])
 
+  participantSignatureUrl   String?
+  signatureUploadedAt       DateTime?
+  trainingReportConfirmedAt DateTime?
+
   lessonProgress LessonProgress[]
   quizAttempts   QuizAttempt[]
   certificate    Certificate?
@@ -907,15 +911,18 @@ model Certificate {
 }
 
 model AntiCheatLog {
-  id           String         @id @default(uuid())
-  enrollmentId String
-  enrollment   Enrollment     @relation(fields: [enrollmentId], references: [id])
-  lessonId     String?
-  eventType    AntiCheatEvent
-  occurredAt   DateTime       @default(now())
-  metadata     Json?
+  id             String         @id @default(uuid())
+  enrollmentId   String
+  enrollment     Enrollment     @relation(fields: [enrollmentId], references: [id])
+  lessonId       String?
+  eventType      AntiCheatEvent
+  occurredAt     DateTime       @default(now())
+  retentionUntil DateTime?
+  metadata       Json?
 
   @@index([enrollmentId])
+  @@index([occurredAt])
+  @@index([retentionUntil])
 }
 
 model AssignCourse {

@@ -2,8 +2,10 @@
 import { prisma } from '../../config/db.js';
 import { randomBytes } from 'crypto';
 import { addDays } from 'date-fns';
+import { config } from '../../config/config.js';
 import { certificateService } from '../certificate/certificate.service.js';
 import { credentialDeliveryService } from '../credential/credentialDelivery.service.js';
+import { computeRetentionUntil } from '../../shared/services/retention.service.js';
 import {
     LICENSEE_COURSE_SELECT,
     formatLicenseeCourse,
@@ -623,6 +625,7 @@ class EnrollmentService {
                 lessonId: payload.lessonId ?? null,
                 eventType: payload.eventType,
                 metadata: payload.metadata ?? null,
+                retentionUntil: await computeRetentionUntil(),
             },
         });
 
@@ -1453,7 +1456,10 @@ class EnrollmentService {
                 antiCheatLogs: {
                     orderBy: { occurredAt: 'desc' },
                     take: 20,
-                    select: { id: true, eventType: true, occurredAt: true, lessonId: true },
+                    select: { id: true, eventType: true, occurredAt: true, lessonId: true, retentionUntil: true },
+                },
+                _count: {
+                    select: { antiCheatLogs: true },
                 },
             },
         });
@@ -1541,8 +1547,13 @@ class EnrollmentService {
                     }
                     : null,
                 antiCheat: {
-                    totalEvents: enrollment.antiCheatLogs?.length ?? 0,
+                    totalEvents: enrollment._count?.antiCheatLogs ?? enrollment.antiCheatLogs?.length ?? 0,
                     recent: enrollment.antiCheatLogs ?? [],
+                },
+                signature: {
+                    url: enrollment.participantSignatureUrl ?? null,
+                    uploadedAt: enrollment.signatureUploadedAt ?? null,
+                    confirmedAt: enrollment.trainingReportConfirmedAt ?? null,
                 },
             };
         });
@@ -1570,6 +1581,211 @@ class EnrollmentService {
                 certificatesEarned: courseDetails.filter(c => c.certificate?.status === 'ISSUED').length,
             },
             courses: courseDetails,
+        };
+    }
+
+    async _assertEnrollmentReportAccess(enrollmentId, user) {
+        const enrollment = await prisma.enrollment.findUnique({
+            where: { id: enrollmentId },
+            select: { id: true, userId: true, courseId: true },
+        });
+        if (!enrollment) throw new Error('Enrollment not found');
+
+        if (enrollment.userId === user.id) {
+            return enrollment;
+        }
+
+        if (['LICENSE_USER', 'PLATFORM_ADMIN'].includes(user.level)) {
+            const licenseeCourseIds = await this._getLicenseeCourseIds(user, {});
+            if (licenseeCourseIds.includes(enrollment.courseId)) {
+                return enrollment;
+            }
+        }
+
+        throw new Error('You do not have permission to manage this training report');
+    }
+
+    async uploadParticipantSignature(enrollmentId, signatureUrl, user = null) {
+        if (!signatureUrl) throw new Error('Signature file is required');
+        await this._assertEnrollmentReportAccess(enrollmentId, user);
+
+        return prisma.enrollment.update({
+            where: { id: enrollmentId },
+            data: {
+                participantSignatureUrl: signatureUrl,
+                signatureUploadedAt: new Date(),
+                trainingReportConfirmedAt: null,
+            },
+            select: {
+                id: true,
+                participantSignatureUrl: true,
+                signatureUploadedAt: true,
+                trainingReportConfirmedAt: true,
+            },
+        });
+    }
+
+    async confirmTrainingReport(enrollmentId, user = null) {
+        await this._assertEnrollmentReportAccess(enrollmentId, user);
+
+        const current = await prisma.enrollment.findUnique({
+            where: { id: enrollmentId },
+            select: { participantSignatureUrl: true },
+        });
+        if (!current?.participantSignatureUrl) {
+            throw new Error('Upload participant signature before confirming the report');
+        }
+
+        return prisma.enrollment.update({
+            where: { id: enrollmentId },
+            data: { trainingReportConfirmedAt: new Date() },
+            select: {
+                id: true,
+                participantSignatureUrl: true,
+                signatureUploadedAt: true,
+                trainingReportConfirmedAt: true,
+            },
+        });
+    }
+
+    _buildAccessUrl(token) {
+        const baseClientUrl = (config.CLIENT_URL || '').replace(/\/$/, '');
+        if (!baseClientUrl || !token) return null;
+        return `${baseClientUrl}/enrollments/access/${token}`;
+    }
+
+    async getAccessLinkInfo(token) {
+        const enrollment = await prisma.enrollment.findFirst({
+            where: { accessLinkToken: token },
+            include: {
+                course: {
+                    select: {
+                        id: true,
+                        courseTitle: true,
+                        slug: true,
+                        thumbnailUrl: true,
+                    },
+                },
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                        firstName: true,
+                        lastName: true,
+                        traineeTaxCode: true,
+                        birthDate: true,
+                        city: true,
+                        residenceAddress: true,
+                    },
+                },
+                companyContext: {
+                    select: {
+                        id: true,
+                        name: true,
+                        fiscalCode: true,
+                        vatNumber: true,
+                        fiscalAddress: true,
+                    },
+                },
+            },
+        });
+
+        if (!enrollment) throw new Error('Access link not found');
+        const now = new Date();
+        const isExpired = Boolean(
+            enrollment.accessLinkExpiresAt && enrollment.accessLinkExpiresAt < now,
+        ) || enrollment.expiresAt < now;
+
+        const requiresProfile = !enrollment.user.traineeTaxCode
+            || !enrollment.user.birthDate
+            || !enrollment.user.residenceAddress;
+
+        return {
+            enrollmentId: enrollment.id,
+            course: enrollment.course,
+            company: enrollment.companyContext,
+            assignedEmail: enrollment.assignedEmail || enrollment.user.email,
+            accessLinkUsed: enrollment.accessLinkUsed,
+            isExpired,
+            requiresProfile,
+            user: {
+                firstName: enrollment.user.firstName,
+                lastName: enrollment.user.lastName,
+                email: enrollment.user.email,
+                taxCode: enrollment.user.traineeTaxCode,
+                birthDate: enrollment.user.birthDate,
+                birthPlace: enrollment.user.city,
+                address: enrollment.user.residenceAddress,
+            },
+            accessUrl: this._buildAccessUrl(token),
+        };
+    }
+
+    async redeemAccessLink(token, payload) {
+        const enrollment = await prisma.enrollment.findFirst({
+            where: { accessLinkToken: token },
+            include: {
+                user: { select: { id: true, email: true, companyId: true } },
+                course: { select: { id: true, slug: true, courseTitle: true } },
+                companyContext: {
+                    select: { id: true, name: true, taxId: true, vatNumber: true, fiscalAddress: true },
+                },
+            },
+        });
+
+        if (!enrollment) throw new Error('Access link not found');
+        if (enrollment.accessLinkUsed) throw new Error('This access link has already been used');
+        const now = new Date();
+        if (enrollment.accessLinkExpiresAt && enrollment.accessLinkExpiresAt < now) {
+            throw new Error('This access link has expired');
+        }
+        if (enrollment.expiresAt < now) throw new Error('Course access has expired');
+
+        await prisma.$transaction(async (tx) => {
+            await tx.user.update({
+                where: { id: enrollment.user.id },
+                data: {
+                    firstName: payload.firstName,
+                    lastName: payload.lastName,
+                    birthDate: payload.birthDate,
+                    city: payload.birthPlace ?? null,
+                    traineeTaxCode: payload.taxCode,
+                    residenceAddress: payload.address,
+                    profileCompleted: true,
+                    status: 'ACTIVE',
+                },
+            });
+
+            if (enrollment.companyContextId && payload.companyName) {
+                await tx.company.update({
+                    where: { id: enrollment.companyContextId },
+                    data: {
+                        name: payload.companyName,
+                        fiscalAddress: payload.companyAddress ?? undefined,
+                        fiscalCode: payload.companyTaxId ?? undefined,
+                        vatNumber: payload.companyVatNumber ?? undefined,
+                    },
+                });
+            }
+
+            await tx.enrollment.update({
+                where: { id: enrollment.id },
+                data: {
+                    accessLinkUsed: true,
+                    assignedEmail: payload.email || enrollment.user.email,
+                    status: enrollment.status === 'NOT_STARTED' ? 'NOT_STARTED' : enrollment.status,
+                },
+            });
+        });
+
+        return {
+            enrollmentId: enrollment.id,
+            courseId: enrollment.course.id,
+            courseSlug: enrollment.course.slug,
+            userId: enrollment.user.id,
+            email: enrollment.user.email,
+            loginUrl: '/auth/login',
+            courseUrl: `/dashboard/company-employee/course/${enrollment.course.id}`,
         };
     }
 }

@@ -4,6 +4,7 @@ import { config } from '../../config/config.js';
 import fs from 'fs';
 import path from 'path';
 import { enrollmentService } from '../enrollment/enrollment.service.js';
+import { lessonService } from '../lesson/lesson.service.js';
 import { notificationService } from '../notification/notification.service.js';
 import { Logger } from '../../config/logger.js';
 import { STATUS_MAP, STATUS_PRIORITY } from './course.constant.js';
@@ -146,6 +147,11 @@ class ScormService {
             throw new BadRequestError('SCORM package not uploaded for this lesson');
         }
         if (lesson.isLocked) throw new BadRequestError('This lesson is locked');
+
+        const lessonStatus = await lessonService.getLessonStatus(lessonId, enrollment.userId);
+        if (!lessonStatus.isAccessible) {
+            throw new BadRequestError('Complete previous required lessons before accessing this one');
+        }
 
         let scormPackageUrl = lesson.scormPackageUrl;
         let scormEntryPoint = lesson.scormEntryPoint;

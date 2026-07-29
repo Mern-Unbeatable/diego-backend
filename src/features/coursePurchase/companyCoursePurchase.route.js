@@ -12,6 +12,7 @@ router.get('/:id', companyGuard, companyCoursePurchaseController.getPurchaseById
 router.post('/assign-seat', companyGuard, companyCoursePurchaseController.assignSeat);
 router.post('/bulk-assign', companyGuard, companyCoursePurchaseController.bulkAssignSeats);
 router.post('/invite-employee', companyGuard, companyCoursePurchaseController.inviteAndAssignEmployee);
+router.post('/send-access-link', companyGuard, companyCoursePurchaseController.sendAccessLink);
 router.delete('/revoke/:enrollmentId', companyGuard, companyCoursePurchaseController.revokeSeat);
 
 export const companyCoursePurchaseRoutes = router;

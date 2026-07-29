@@ -1,0 +1,138 @@
+{
+  "_readme": "Import into Postman or copy bodies. Replace {{tenantId}}, {{base_api}}, tokens. SCORM: upload .zip via multipart OR host Golf zip on your server.",
+  "course": {
+    "courseTitle": {
+      "en": "Master Test Course - All Content Types",
+      "it": "Corso Master Test - Tutti i Tipi di Contenuto"
+    },
+    "slug": "master-all-content-types-2026",
+    "category": "CATALOG",
+    "format": "FILE",
+    "navigationMode": "SEQUENTIAL",
+    "description": {
+      "en": "One course with every supported lesson contentType for QA.",
+      "it": "Un corso con tutti i contentType supportati per test QA."
+    },
+    "durationMinutes": 300,
+    "validityDays": 90,
+    "passScorePercent": 80,
+    "price": 9.99,
+    "basePrice": 9.99,
+    "isActive": true,
+    "isB2BOnly": false,
+    "cig": "CIG-TEST-001",
+    "cup": "CUP-TEST-001",
+    "cip": "CIP-TEST-001",
+    "tenantId": "{{tenantId}}"
+  },
+  "lessons": [
+    {
+      "_type": "VIDEO_YOUTUBE",
+      "title": { "en": "Lesson 1 - YouTube Video", "it": "Lezione 1 - Video YouTube" },
+      "orderIndex": 0,
+      "contentType": "VIDEO_YOUTUBE",
+      "youtubeUrl": "https://www.youtube.com/watch?v=UB1O30fR-EE",
+      "durationSecs": 600,
+      "isRequired": true
+    },
+    {
+      "_type": "VIDEO_UPLOAD",
+      "title": { "en": "Lesson 2 - Uploaded MP4", "it": "Lezione 2 - Video caricato" },
+      "orderIndex": 1,
+      "contentType": "VIDEO_UPLOAD",
+      "contentUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+      "durationSecs": 1200,
+      "isRequired": true
+    },
+    {
+      "_type": "PDF",
+      "title": { "en": "Lesson 3 - PDF Document", "it": "Lezione 3 - Documento PDF" },
+      "orderIndex": 2,
+      "contentType": "PDF",
+      "contentUrl": "https://www.w3.org/WAI/WCAG21/Techniques/pdf/img/table.pdf",
+      "durationSecs": 180,
+      "isRequired": true
+    },
+    {
+      "_type": "WORD",
+      "title": { "en": "Lesson 4 - Word Document", "it": "Lezione 4 - Documento Word" },
+      "orderIndex": 3,
+      "contentType": "WORD",
+      "contentUrl": "https://filesamples.com/samples/document/docx/sample1.docx",
+      "durationSecs": 180,
+      "isRequired": true
+    },
+    {
+      "_type": "EXCEL",
+      "title": { "en": "Lesson 5 - Excel Spreadsheet", "it": "Lezione 5 - Foglio Excel" },
+      "orderIndex": 4,
+      "contentType": "EXCEL",
+      "contentUrl": "https://filesamples.com/samples/document/xlsx/sample1.xlsx",
+      "durationSecs": 180,
+      "isRequired": true
+    },
+    {
+      "_type": "FILE",
+      "title": { "en": "Lesson 6 - Generic File", "it": "Lezione 6 - File generico" },
+      "orderIndex": 5,
+      "contentType": "FILE",
+      "contentUrl": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "durationSecs": 120,
+      "isRequired": false
+    },
+    {
+      "_type": "SCORM",
+      "_note": "Use multipart upload with scormPackageUrl file OR URL after you host Golf zip. See README in postman folder.",
+      "title": { "en": "Lesson 7 - SCORM 1.2 Package", "it": "Lezione 7 - Pacchetto SCORM 1.2" },
+      "orderIndex": 6,
+      "contentType": "SCORM",
+      "scormPackageUrl": "https://your-cdn-or-server.com/scorm/ContentPackagingOneFilePerSCO_SCORM12.zip",
+      "scormVersion": "1.2",
+      "scormEntryPoint": "shared/launchpage.html",
+      "durationSecs": 900,
+      "isRequired": true
+    },
+    {
+      "_type": "SCORM_12",
+      "title": { "en": "Lesson 8 - SCORM 1.2 (alt)", "it": "Lezione 8 - SCORM alternativo" },
+      "orderIndex": 7,
+      "contentType": "SCORM_12",
+      "scormPackageUrl": "https://your-cdn-or-server.com/scorm/ContentPackagingOneFilePerSCO_SCORM12.zip",
+      "scormVersion": "1.2",
+      "scormEntryPoint": "shared/launchpage.html",
+      "durationSecs": 900,
+      "isRequired": true
+    }
+  ],
+  "quiz": {
+    "quizTitle": { "en": "Final Assessment - All Types Course", "it": "Valutazione Finale" },
+    "quizType": "FINAL_TEST",
+    "passScorePercent": 80,
+    "maxAttempts": 3,
+    "isActive": true,
+    "questions": [
+      {
+        "id": "q1",
+        "text": { "en": "Which content type uses youtubeUrl?", "it": "Quale tipo usa youtubeUrl?" },
+        "type": "SINGLE",
+        "points": 50,
+        "options": [
+          { "id": "q1-a", "text": { "en": "VIDEO_YOUTUBE" }, "isCorrect": true },
+          { "id": "q1-b", "text": { "en": "PDF" }, "isCorrect": false },
+          { "id": "q1-c", "text": { "en": "SCORM" }, "isCorrect": false }
+        ]
+      },
+      {
+        "id": "q2",
+        "text": { "en": "Minimum pass score for this course?", "it": "Punteggio minimo?" },
+        "type": "SINGLE",
+        "points": 50,
+        "options": [
+          { "id": "q2-a", "text": { "en": "80%" }, "isCorrect": true },
+          { "id": "q2-b", "text": { "en": "50%" }, "isCorrect": false },
+          { "id": "q2-c", "text": { "en": "100%" }, "isCorrect": false }
+        ]
+      }
+    ]
+  }
+}

@@ -1,7 +1,6 @@
-
 import cron from 'node-cron';
-import { Logger } from '../../config/logger';
-import { notificationService } from '../../features/notification/notification.service';
+import { Logger } from '../../config/logger.js';
+import { notificationService } from '../../features/notification/notification.service.js';
 
 const log = new Logger('Scheduler');
 

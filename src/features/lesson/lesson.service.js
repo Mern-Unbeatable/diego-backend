@@ -55,7 +55,6 @@ export class LessonService {
 
         const idx = sortedLessons.findIndex(l => l.id === lesson.id);
         if (idx < 0) return false;
-        if (idx === 0 && lesson.isLocked) return false;
 
         for (let i = 0; i < idx; i++) {
             const prev = sortedLessons[i];
@@ -64,6 +63,17 @@ export class LessonService {
             if (!this._isLessonCompleted(prev, prevProgress)) return false;
         }
         return true;
+    }
+
+    _buildAccessProgressMap(sortedLessons, progressMap) {
+        const accessProgressMap = new Map(progressMap);
+        for (const courseLesson of sortedLessons) {
+            const progress = accessProgressMap.get(courseLesson.id);
+            if (progress && this._isLessonCompleted(courseLesson, progress)) {
+                accessProgressMap.set(courseLesson.id, { ...progress, completed: true });
+            }
+        }
+        return accessProgressMap;
     }
 
     _formatLessonProgressRow(lesson, progress, locale, { sortedLessons, progressMap, navigationMode }) {
@@ -511,8 +521,15 @@ export class LessonService {
         const [allLessons, allProgress] = await Promise.all([
             prisma.lesson.findMany({
                 where: { courseId: lesson.courseId },
-                orderBy: { orderIndex: 'asc' },
-                select: { id: true, contentType: true, isRequired: true, isLocked: true, orderIndex: true },
+                orderBy: [{ orderIndex: 'asc' }, { id: 'asc' }],
+                select: {
+                    id: true,
+                    contentType: true,
+                    isRequired: true,
+                    isLocked: true,
+                    orderIndex: true,
+                    durationSecs: true,
+                },
             }),
             prisma.lessonProgress.findMany({
                 where: { enrollmentId: enrollment.id },
@@ -526,15 +543,7 @@ export class LessonService {
             }),
         ]);
         const progressMap = new Map(allProgress.map(p => [p.lessonId, p]));
-
-        if (!this._isLessonAccessible(lesson, allLessons, progressMap, lesson.course.navigationMode)) {
-            throw new Error('Complete previous required lessons before accessing this one');
-        }
-
-        const requestedCompleted = progressData.completed ?? false;
-        const requestedTimeSpent = progressData.timeSpentSecs ?? 0;
-        const requestedWatchPercent = progressData.watchPercent ?? undefined;
-        const requestedLastPosition = progressData.lastPositionSecs ?? undefined;
+        const accessProgressMap = this._buildAccessProgressMap(allLessons, progressMap);
 
         const existingProgress = await prisma.lessonProgress.findUnique({
             where: {
@@ -546,8 +555,37 @@ export class LessonService {
                 lastPositionSecs: true,
                 completed: true,
                 completedAt: true,
+                startedAt: true,
             },
         });
+
+        const hasExistingProgress = Boolean(existingProgress);
+        const canAccessLesson = this._isLessonAccessible(
+            lesson,
+            allLessons,
+            accessProgressMap,
+            lesson.course.navigationMode,
+        );
+
+        if (!hasExistingProgress && !canAccessLesson) {
+            const blockingLesson = allLessons.find((courseLesson, index) => {
+                const lessonIndex = allLessons.findIndex((item) => item.id === lesson.id);
+                if (lessonIndex < 0 || index >= lessonIndex) return false;
+                if (!courseLesson.isRequired) return false;
+                const prevProgress = accessProgressMap.get(courseLesson.id);
+                return !this._isLessonCompleted(courseLesson, prevProgress);
+            });
+
+            const message = blockingLesson
+                ? `Complete lesson ${blockingLesson.orderIndex + 1} before accessing this one`
+                : 'Complete previous required lessons before accessing this one';
+            throw new BadRequestError(message);
+        }
+
+        const requestedCompleted = progressData.completed ?? false;
+        const requestedTimeSpent = progressData.timeSpentSecs ?? 0;
+        const requestedWatchPercent = progressData.watchPercent ?? undefined;
+        const requestedLastPosition = progressData.lastPositionSecs ?? undefined;
 
         const watchPercent = Math.max(
             existingProgress?.watchPercent ?? 0,
@@ -599,6 +637,7 @@ export class LessonService {
                 timeSpentSecs,
                 watchPercent,
                 lastPositionSecs,
+                startedAt: existingProgress?.startedAt ?? new Date(),
             },
         });
 
@@ -635,7 +674,7 @@ export class LessonService {
 
         const lessons = await prisma.lesson.findMany({
             where: { courseId },
-            orderBy: { orderIndex: 'asc' },
+            orderBy: [{ orderIndex: 'asc' }, { id: 'asc' }],
             include: {
                 progress: {
                     where: { enrollmentId: enrollment.id },

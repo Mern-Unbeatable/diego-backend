@@ -213,6 +213,31 @@ class EnrollmentController {
             data: result,
         });
     });
+
+    uploadParticipantSignature = catchAsync(async (req, res) => {
+        const { enrollmentId } = req.params;
+        const signatureUrl = req.body.signature;
+        const result = await enrollmentService.uploadParticipantSignature(
+            enrollmentId,
+            signatureUrl,
+            req.user,
+        );
+
+        ResponseHandler.success(res, {
+            message: 'Participant signature uploaded successfully',
+            data: result,
+        });
+    });
+
+    confirmTrainingReport = catchAsync(async (req, res) => {
+        const { enrollmentId } = req.params;
+        const result = await enrollmentService.confirmTrainingReport(enrollmentId, req.user);
+
+        ResponseHandler.success(res, {
+            message: 'Training report confirmed successfully',
+            data: result,
+        });
+    });
 }
 
 export const enrollmentController = new EnrollmentController();

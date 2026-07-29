@@ -1,0 +1,613 @@
+{
+  "info": {
+    "name": "LMS - All Content Types + New APIs (2026)",
+    "description": "Complete QA collection:\n- Create course with ALL lesson types (YouTube, Video upload, PDF, Word, Excel, File, SCORM)\n- New APIs: access link, company purchases, archive, signature, anti-cheat\n\nVariables: base_api, admin_token, company_admin_token, student_token, courseId, lessonId, enrollmentId, accessToken, quizId\n\nSCORM test packages: download from https://scorm.com/scorm-explained/technical-scorm/golf-examples/ then upload via multipart OR host zip URL.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_api", "value": "http://localhost:5000/api/v1" },
+    { "key": "admin_token", "value": "" },
+    { "key": "company_admin_token", "value": "" },
+    { "key": "student_token", "value": "" },
+    { "key": "tenantId", "value": "" },
+    { "key": "courseId", "value": "" },
+    { "key": "lessonId", "value": "" },
+    { "key": "lessonId_scorm", "value": "" },
+    { "key": "quizId", "value": "" },
+    { "key": "enrollmentId", "value": "" },
+    { "key": "accessToken", "value": "" },
+    { "key": "companyCoursePurchaseId", "value": "" },
+    { "key": "certificateId", "value": "" },
+    { "key": "payment_intent_id", "value": "" },
+    { "key": "scormSessionId", "value": "" },
+    { "key": "studentUserId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0 - Auth",
+      "item": [
+        {
+          "name": "Platform Admin - Sign In (OTP step 1)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"Password@123\"\n}"
+            },
+            "url": "{{base_api}}/auth/signin"
+          }
+        },
+        {
+          "name": "Platform Admin - Verify OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json?.data?.tokens?.accessToken || json?.data?.accessToken;",
+                  "if (token) pm.collectionVariables.set('admin_token', token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"otp\": \"123456\"\n}"
+            },
+            "url": "{{base_api}}/auth/verify-login-otp"
+          }
+        },
+        {
+          "name": "Company Admin - Verify OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json?.data?.tokens?.accessToken || json?.data?.accessToken;",
+                  "if (token) pm.collectionVariables.set('company_admin_token', token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"company-admin@example.com\",\n  \"otp\": \"123456\"\n}"
+            },
+            "url": "{{base_api}}/auth/verify-login-otp"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 - Create Master Course (All Types)",
+      "item": [
+        {
+          "name": "1.1 Create Course",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const id = json?.data?.course?.id;",
+                  "if (id) pm.collectionVariables.set('courseId', id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courseTitle\": {\n    \"en\": \"Master Test Course - All Content Types\",\n    \"it\": \"Corso Master Test - Tutti i Tipi\"\n  },\n  \"slug\": \"master-all-content-types-2026\",\n  \"category\": \"CATALOG\",\n  \"format\": \"FILE\",\n  \"navigationMode\": \"SEQUENTIAL\",\n  \"description\": {\n    \"en\": \"QA course with every lesson type.\",\n    \"it\": \"Corso QA con tutti i tipi di lezione.\"\n  },\n  \"durationMinutes\": 300,\n  \"validityDays\": 90,\n  \"passScorePercent\": 80,\n  \"price\": 9.99,\n  \"basePrice\": 9.99,\n  \"isActive\": true,\n  \"cig\": \"CIG-TEST-001\",\n  \"cup\": \"CUP-TEST-001\",\n  \"cip\": \"CIP-TEST-001\",\n  \"tenantId\": \"{{tenantId}}\"\n}"
+            },
+            "url": "{{base_api}}/courses"
+          }
+        },
+        {
+          "name": "1.2 Lesson - VIDEO_YOUTUBE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const id = json?.data?.lesson?.id;",
+                  "if (id) pm.collectionVariables.set('lessonId', id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": { \"en\": \"Lesson 1 - YouTube\", \"it\": \"Lezione 1 - YouTube\" },\n  \"orderIndex\": 0,\n  \"contentType\": \"VIDEO_YOUTUBE\",\n  \"youtubeUrl\": \"https://www.youtube.com/watch?v=UB1O30fR-EE\",\n  \"durationSecs\": 600,\n  \"isRequired\": true\n}"
+            },
+            "url": "{{base_api}}/courses/{{courseId}}/lessons"
+          }
+        },
+        {
+          "name": "1.3 Lesson - VIDEO_UPLOAD (MP4)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": { \"en\": \"Lesson 2 - MP4 Upload\", \"it\": \"Lezione 2 - MP4\" },\n  \"orderIndex\": 1,\n  \"contentType\": \"VIDEO_UPLOAD\",\n  \"contentUrl\": \"https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4\",\n  \"durationSecs\": 1200,\n  \"isRequired\": true\n}"
+            },
+            "url": "{{base_api}}/courses/{{courseId}}/lessons"
+          }
+        },
+        {
+          "name": "1.4 Lesson - PDF",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": { \"en\": \"Lesson 3 - PDF\", \"it\": \"Lezione 3 - PDF\" },\n  \"orderIndex\": 2,\n  \"contentType\": \"PDF\",\n  \"contentUrl\": \"https://www.w3.org/WAI/WCAG21/Techniques/pdf/img/table.pdf\",\n  \"durationSecs\": 180,\n  \"isRequired\": true\n}"
+            },
+            "url": "{{base_api}}/courses/{{courseId}}/lessons"
+          }
+        },
+        {
+          "name": "1.5 Lesson - WORD",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": { \"en\": \"Lesson 4 - Word\", \"it\": \"Lezione 4 - Word\" },\n  \"orderIndex\": 3,\n  \"contentType\": \"WORD\",\n  \"contentUrl\": \"https://filesamples.com/samples/document/docx/sample1.docx\",\n  \"durationSecs\": 180,\n  \"isRequired\": true\n}"
+            },
+            "url": "{{base_api}}/courses/{{courseId}}/lessons"
+          }
+        },
+        {
+          "name": "1.6 Lesson - EXCEL",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": { \"en\": \"Lesson 5 - Excel\", \"it\": \"Lezione 5 - Excel\" },\n  \"orderIndex\": 4,\n  \"contentType\": \"EXCEL\",\n  \"contentUrl\": \"https://filesamples.com/samples/document/xlsx/sample1.xlsx\",\n  \"durationSecs\": 180,\n  \"isRequired\": true\n}"
+            },
+            "url": "{{base_api}}/courses/{{courseId}}/lessons"
+          }
+        },
+        {
+          "name": "1.7 Lesson - FILE",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": { \"en\": \"Lesson 6 - Generic File\", \"it\": \"Lezione 6 - File\" },\n  \"orderIndex\": 5,\n  \"contentType\": \"FILE\",\n  \"contentUrl\": \"https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf\",\n  \"durationSecs\": 120,\n  \"isRequired\": false\n}"
+            },
+            "url": "{{base_api}}/courses/{{courseId}}/lessons"
+          }
+        },
+        {
+          "name": "1.8 Lesson - SCORM (multipart zip upload)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const id = json?.data?.lesson?.id;",
+                  "if (id) pm.collectionVariables.set('lessonId_scorm', id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "title",
+                  "value": "{\"en\":\"Lesson 7 - SCORM Golf\",\"it\":\"Lezione 7 - SCORM\"}",
+                  "type": "text"
+                },
+                { "key": "orderIndex", "value": "6", "type": "text" },
+                { "key": "contentType", "value": "SCORM", "type": "text" },
+                { "key": "scormVersion", "value": "1.2", "type": "text" },
+                { "key": "durationSecs", "value": "900", "type": "text" },
+                { "key": "isRequired", "value": "true", "type": "text" },
+                {
+                  "key": "scormPackageUrl",
+                  "type": "file",
+                  "src": "/path/to/ContentPackagingOneFilePerSCO_SCORM12.zip",
+                  "description": "Download Golf SCORM zip from scorm.com — select your local file"
+                }
+              ]
+            },
+            "url": "{{base_api}}/courses/{{courseId}}/lessons"
+          }
+        },
+        {
+          "name": "1.9 Create Final Quiz",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const id = json?.data?.quiz?.id;",
+                  "if (id) pm.collectionVariables.set('quizId', id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quizTitle\": { \"en\": \"Final Test\", \"it\": \"Test Finale\" },\n  \"quizType\": \"FINAL_TEST\",\n  \"passScorePercent\": 80,\n  \"maxAttempts\": 3,\n  \"isActive\": true,\n  \"questions\": [\n    {\n      \"id\": \"q1\",\n      \"text\": { \"en\": \"Which type uses youtubeUrl?\" },\n      \"type\": \"SINGLE\",\n      \"points\": 50,\n      \"options\": [\n        { \"id\": \"q1-a\", \"text\": { \"en\": \"VIDEO_YOUTUBE\" }, \"isCorrect\": true },\n        { \"id\": \"q1-b\", \"text\": { \"en\": \"PDF\" }, \"isCorrect\": false }\n      ]\n    },\n    {\n      \"id\": \"q2\",\n      \"text\": { \"en\": \"Pass score is?\" },\n      \"type\": \"SINGLE\",\n      \"points\": 50,\n      \"options\": [\n        { \"id\": \"q2-a\", \"text\": { \"en\": \"80%\" }, \"isCorrect\": true },\n        { \"id\": \"q2-b\", \"text\": { \"en\": \"50%\" }, \"isCorrect\": false }\n      ]\n    }\n  ]\n}"
+            },
+            "url": "{{base_api}}/quizzes/{{courseId}}"
+          }
+        },
+        {
+          "name": "1.10 Publish Quiz",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"isPublished\": true\n}" },
+            "url": "{{base_api}}/quizzes/{{quizId}}/publish"
+          }
+        },
+        {
+          "name": "1.11 List Lessons",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": "{{base_api}}/courses/{{courseId}}/lessons"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 - Student Learning Flow",
+      "item": [
+        {
+          "name": "2.1 My Enrollments",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const list = json?.data?.enrollments || [];",
+                  "const match = list.find(e => e.courseId === pm.collectionVariables.get('courseId')) || list[0];",
+                  "if (match?.id) pm.collectionVariables.set('enrollmentId', match.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "url": "{{base_api}}/enrollments/my"
+          }
+        },
+        {
+          "name": "2.2 Track Video Progress",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{student_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"watchPercent\": 95,\n  \"timeSpentSecs\": 540,\n  \"lastPositionSecs\": 540,\n  \"completed\": true\n}"
+            },
+            "url": "{{base_api}}/courses/{{courseId}}/lessons/{{lessonId}}/progress"
+          }
+        },
+        {
+          "name": "2.3 Log Anti-Cheat Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{student_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lessonId\": \"{{lessonId}}\",\n  \"eventType\": \"MOUSE_IDLE\",\n  \"metadata\": { \"reason\": \"postman-test\" }\n}"
+            },
+            "url": "{{base_api}}/enrollments/{{enrollmentId}}/anti-cheat"
+          }
+        },
+        {
+          "name": "2.4 SCORM Launch",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const sid = json?.data?.sessionId || json?.data?.session?.id;",
+                  "if (sid) pm.collectionVariables.set('scormSessionId', sid);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{student_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enrollmentId\": \"{{enrollmentId}}\",\n  \"lessonId\": \"{{lessonId_scorm}}\"\n}"
+            },
+            "url": "{{base_api}}/scorm/launch"
+          }
+        },
+        {
+          "name": "2.5 SCORM Finish",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{student_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"{{scormSessionId}}\",\n  \"status\": \"completed\"\n}"
+            },
+            "url": "{{base_api}}/scorm/finish"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 - Company Package & Access Link (NEW)",
+      "item": [
+        {
+          "name": "3.1 Get My Purchases",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const p = json?.data?.purchases?.[0];",
+                  "if (p?.id) pm.collectionVariables.set('companyCoursePurchaseId', p.id);",
+                  "const emp = p?.assignedEmployees?.[0];",
+                  "if (emp?.enrollmentId) pm.collectionVariables.set('enrollmentId', emp.enrollmentId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{company_admin_token}}" }],
+            "url": "{{base_api}}/company-purchases/my-purchases"
+          }
+        },
+        {
+          "name": "3.2 Invite Employee + Assign Seat",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyCoursePurchaseId\": \"{{companyCoursePurchaseId}}\",\n  \"email\": \"corsista.test@example.com\",\n  \"firstName\": \"Franco\",\n  \"lastName\": \"Rossi\"\n}"
+            },
+            "url": "{{base_api}}/company-purchases/invite-employee"
+          }
+        },
+        {
+          "name": "3.3 Send Access Link Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enrollmentId\": \"{{enrollmentId}}\"\n}"
+            },
+            "url": "{{base_api}}/company-purchases/send-access-link"
+          }
+        },
+        {
+          "name": "3.4 Get Access Link Info (PUBLIC)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = pm.collectionVariables.get('accessToken');",
+                  "if (!token && json?.data?.accessUrl) {",
+                  "  const parts = json.data.accessUrl.split('/');",
+                  "  pm.collectionVariables.set('accessToken', parts[parts.length - 1]);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_api}}/enrollments/access/{{accessToken}}"
+          }
+        },
+        {
+          "name": "3.5 Redeem Access Link (PUBLIC)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Franco\",\n  \"lastName\": \"Rossi\",\n  \"birthDate\": \"1990-05-15\",\n  \"birthPlace\": \"Roma\",\n  \"taxCode\": \"RSSFNC90E15H501Z\",\n  \"address\": \"Via Roma 1, 00100 Roma\",\n  \"companyName\": \"Azienda Test SRL\",\n  \"companyAddress\": \"Via Milano 10, Milano\",\n  \"companyTaxId\": \"12345678901\",\n  \"companyVatNumber\": \"IT12345678901\"\n}"
+            },
+            "url": "{{base_api}}/enrollments/access/{{accessToken}}/redeem"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 - Archive Cloud (NEW)",
+      "item": [
+        {
+          "name": "4.1 Get Archive Plan",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "url": "{{base_api}}/certificates/archive/plan"
+          }
+        },
+        {
+          "name": "4.2 My Certificates (with archive meta)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const cert = json?.data?.certificates?.[0];",
+                  "if (cert?.id) pm.collectionVariables.set('certificateId', cert.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "url": "{{base_api}}/certificates/my"
+          }
+        },
+        {
+          "name": "4.3 Create Archive Payment Intent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const pi = json?.data?.paymentIntentId || json?.data?.paymentIntent?.id;",
+                  "if (pi) pm.collectionVariables.set('payment_intent_id', pi);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "url": "{{base_api}}/payments/intent/archive"
+          }
+        },
+        {
+          "name": "4.4 Verify Archive Payment",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "url": "{{base_api}}/payments/intent/archive/verify?paymentIntentId={{payment_intent_id}}"
+          }
+        },
+        {
+          "name": "4.5 Download Certificate",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "url": "{{base_api}}/certificates/{{certificateId}}/download"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 - Training Report & Signature (NEW)",
+      "item": [
+        {
+          "name": "5.1 Licensee Student Detail",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": "{{base_api}}/enrollments/licensee/students/{{studentUserId}}"
+          }
+        },
+        {
+          "name": "5.2 Upload Participant Signature (multipart)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "signature",
+                  "type": "file",
+                  "src": "/path/to/signature.png",
+                  "description": "PNG/JPG signature image"
+                }
+              ]
+            },
+            "url": "{{base_api}}/enrollments/{{enrollmentId}}/participant-signature"
+          }
+        },
+        {
+          "name": "5.3 Confirm Training Report",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{student_token}}" }],
+            "url": "{{base_api}}/enrollments/{{enrollmentId}}/training-report/confirm"
+          }
+        }
+      ]
+    }
+  ]
+}

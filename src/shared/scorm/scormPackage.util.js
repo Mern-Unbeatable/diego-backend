@@ -226,6 +226,15 @@ export const prepareScormPackageFromUpload = async (
     const folderName = path.basename(localZipPath, '.zip');
     const extractDir = path.join(SCORM_ROOT, folderName);
 
+    // Already extracted — update DB URL only; do not unzip again on every launch.
+    if (fs.existsSync(path.join(extractDir, 'imsmanifest.xml'))) {
+        installLmsLaunchPageIfNeeded(extractDir);
+        return {
+            scormPackageUrl: `${getBaseUrl()}/uploads/scorm/${folderName}`,
+            scormEntryPoint: scormEntryPoint || readManifestEntryPoint(extractDir) || 'shared/launchpage.html',
+        };
+    }
+
     if (!fs.existsSync(localZipPath)) {
         if (fs.existsSync(path.join(extractDir, 'imsmanifest.xml'))) {
             installLmsLaunchPageIfNeeded(extractDir);

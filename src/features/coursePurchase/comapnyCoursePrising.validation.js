@@ -17,3 +17,7 @@ export const inviteEmployeeSchema = z.object({
   lastName: z.string().min(1).optional(),
   jobTitle: z.string().optional(),
 });
+
+export const sendAccessLinkSchema = z.object({
+  enrollmentId: z.string().uuid('Invalid enrollment ID'),
+});

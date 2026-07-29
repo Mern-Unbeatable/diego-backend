@@ -3,6 +3,8 @@ import { config } from './config/config.js';
 import { connectDatabase } from './config/db.js';
 import { seedLicensePlans } from './seeds/license.plan.seeder.js';
 import { startExpiryCheckJob } from './shared/jobs/expiry-check.js';
+import { startRetentionCleanupJob } from './shared/jobs/retention-cleanup.js';
+import './shared/jobs/shedule.js';
 
 import { seedPackages } from './seeds/package.seeder.js';
 import { seedUsers } from './seeds/user.seeder.js';
@@ -29,6 +31,7 @@ const startApplication = async () => {
 
     application.start();
     startExpiryCheckJob();
+    startRetentionCleanupJob();
     config.logger.info('Application started successfully');
   } catch (error) {
     config.logger.error('Startup failed', error, 'Bootstrap');

@@ -50,7 +50,16 @@ class CompanyCoursePurchaseService {
             include: {
                 course: { select: { id: true, courseTitle: true, slug: true, thumbnailUrl: true, isActive: true } },
                 enrollments: {
-                    include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
+                    select: {
+                        id: true,
+                        userId: true,
+                        status: true,
+                        accessLinkToken: true,
+                        accessLinkExpiresAt: true,
+                        accessLinkUsed: true,
+                        assignedEmail: true,
+                        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+                    },
                 },
             },
         });
@@ -80,8 +89,11 @@ class CompanyCoursePurchaseService {
                     enrollmentId: e.id,
                     userId: e.userId,
                     name: `${e.user.firstName || ''} ${e.user.lastName || ''}`.trim(),
-                    email: e.user.email,
+                    email: e.assignedEmail || e.user.email,
                     status: e.status,
+                    accessLinkUsed: e.accessLinkUsed,
+                    accessUrl: this._buildEnrollmentAccessLink(e.accessLinkToken),
+                    accessLinkExpiresAt: e.accessLinkExpiresAt,
                 })),
             };
         });
@@ -344,6 +356,47 @@ class CompanyCoursePurchaseService {
         });
 
         return { revoked: true, enrollmentId };
+    }
+
+    async sendAccessLinkEmail(enrollmentId, requestedByUserId) {
+        const enrollment = await prisma.enrollment.findUnique({
+            where: { id: enrollmentId },
+            include: {
+                user: { select: { id: true, email: true, firstName: true, lastName: true, companyId: true } },
+                course: { select: { id: true, courseTitle: true } },
+                companyCoursePurchase: { select: { companyId: true } },
+            },
+        });
+        if (!enrollment) throw new Error('Enrollment not found');
+        if (!enrollment.accessLinkToken) throw new Error('No access link available for this enrollment');
+
+        const requester = await prisma.user.findUnique({
+            where: { id: requestedByUserId },
+            select: { companyId: true, level: true },
+        });
+        const companyId = enrollment.companyCoursePurchase?.companyId || enrollment.user.companyId;
+        if (requester?.level !== 'PLATFORM_ADMIN' && requester?.companyId !== companyId) {
+            throw new Error('Permission denied');
+        }
+
+        const accessUrl = this._buildEnrollmentAccessLink(enrollment.accessLinkToken);
+        const targetEmail = enrollment.assignedEmail || enrollment.user.email;
+
+        await notificationService.notifyCourseAssigned?.({
+            userId: enrollment.user.id,
+            email: targetEmail,
+            courses: [enrollment.course.courseTitle],
+            courseTitle: enrollment.course.courseTitle,
+            accessUrl,
+            expiresAt: enrollment.accessLinkExpiresAt,
+        });
+
+        return {
+            sent: true,
+            email: targetEmail,
+            accessUrl,
+            enrollmentId: enrollment.id,
+        };
     }
 }
 

@@ -2,7 +2,7 @@ import { Logger } from '../../config/logger.js';
 import { catchAsync } from '../../shared/globals/decorators/catch-async.js';
 import { ResponseHandler } from '../../shared/globals/helpers/response.handler.js';
 import { companyCoursePurchaseService } from './companyCoursePricing.service.js';
-import { assignSeatSchema, bulkAssignSeatsSchema, inviteEmployeeSchema } from './comapnyCoursePrising.validation.js';
+import { assignSeatSchema, bulkAssignSeatsSchema, inviteEmployeeSchema, sendAccessLinkSchema } from './comapnyCoursePrising.validation.js';
 
 class CompanyCoursePurchaseController {
     constructor() {
@@ -44,6 +44,15 @@ class CompanyCoursePurchaseController {
         const { enrollmentId } = req.params;
         const result = await companyCoursePurchaseService.revokeSeat(enrollmentId, req.user.id);
         ResponseHandler.success(res, { message: 'Seat revoked successfully', data: result });
+    });
+
+    sendAccessLink = catchAsync(async (req, res) => {
+        const payload = sendAccessLinkSchema.parse(req.body);
+        const result = await companyCoursePurchaseService.sendAccessLinkEmail(
+            payload.enrollmentId,
+            req.user.id,
+        );
+        ResponseHandler.success(res, { message: 'Access link sent successfully', data: result });
     });
 }
 

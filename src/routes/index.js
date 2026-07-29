@@ -6,6 +6,7 @@ import { scormRoutes } from '../features/course/scorm.route.js';
 import { companyCoursePurchaseRoutes } from '../features/coursePurchase/companyCoursePurchase.route.js';
 import { employeeRoutes } from '../features/employee/employee.route.js';
 import { enrollmentRoutes } from '../features/enrollment/enrollment.route.js';
+import { enrollmentPublicRoutes } from '../features/enrollment/enrollment.public.route.js';
 import { lessonRoutes } from '../features/lesson/lesson.route.js';
 import { lessonStandaloneRoutes } from '../features/lesson/lesson.standalone.route.js';
 import { licenseRoutes } from '../features/license/license.route.js';
@@ -39,6 +40,7 @@ export default (app) => {
   app.use(`${BASE_PATH}/courses`, courseRoutes);
   app.use(`${BASE_PATH}/licenses`, licenseRoutes);
   app.use(`${BASE_PATH}/payments`, paymentRoutes);
+  app.use(`${BASE_PATH}/enrollments/access`, enrollmentPublicRoutes);
   app.use(`${BASE_PATH}/enrollments`, enrollmentRoutes);
   app.use(`${BASE_PATH}/quizzes`, quizRoutes);
   app.use(`${BASE_PATH}/scorm`, scormRoutes);
