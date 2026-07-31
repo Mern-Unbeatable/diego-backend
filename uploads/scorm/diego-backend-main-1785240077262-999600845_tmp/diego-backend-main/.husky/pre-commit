@@ -1,4 +1,0 @@
-#!/bin/sh
-
-pnpm lint-staged
-pnpm test
