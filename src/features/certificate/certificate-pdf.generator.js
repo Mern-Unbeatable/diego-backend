@@ -13,17 +13,35 @@ if (!fs.existsSync(PDF_DIR)) fs.mkdirSync(PDF_DIR, { recursive: true });
 const NAVY = '#1a365d';
 
 // ---- Chromium path resolver (Nixpacks / Coolify VPS fix) ----
+
 function resolveChromiumPath() {
   const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
 
-  // Only trust an explicit env var if it's set AND not the broken Ubuntu apt stub
-  if (envPath && !envPath.includes('chromium-browser')) {
-    log.info(`Using Chromium from PUPPETEER_EXECUTABLE_PATH: ${envPath}`);
-    return envPath;
+  // ⚠️ CRITICAL: DELETE the env var if it points to the broken Ubuntu snap stub.
+  // Puppeteer reads this env var INTERNALLY — just returning undefined is not enough.
+  if (envPath && envPath.includes('chromium-browser')) {
+    log.warn(
+      `Removing broken PUPPETEER_EXECUTABLE_PATH="${envPath}" — ` +
+      'this is the Ubuntu snap stub and does not work inside containers.'
+    );
+    delete process.env.PUPPETEER_EXECUTABLE_PATH;
+    return undefined;
   }
 
-  // Otherwise let Puppeteer use its own bundled/downloaded Chromium
-  log.info('No valid PUPPETEER_EXECUTABLE_PATH set — using Puppeteer bundled Chromium.');
+  if (envPath) {
+    // Verify the executable actually exists before trusting it
+    if (fs.existsSync(envPath)) {
+      log.info(`Using Chromium from PUPPETEER_EXECUTABLE_PATH: ${envPath}`);
+      return envPath;
+    }
+    log.warn(
+      `PUPPETEER_EXECUTABLE_PATH="${envPath}" does not exist — removing and falling back to bundled Chromium.`
+    );
+    delete process.env.PUPPETEER_EXECUTABLE_PATH;
+    return undefined;
+  }
+
+  log.info('No PUPPETEER_EXECUTABLE_PATH set — using Puppeteer bundled Chromium.');
   return undefined;
 }
 // ---------------------------------------------------------------

@@ -1,5 +1,6 @@
 [phases.setup]
-nixPkgs = ["nodejs_22"]
+nixPkgs = ["nodejs_22", "chromium"]
+
 aptPkgs = [
   "libnss3",
   "libatk1.0-0t64",
@@ -16,3 +17,12 @@ aptPkgs = [
   "libcairo2",
   "fonts-liberation"
 ]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[phases.install]
+cmds = ["pnpm install --frozen-lockfile"]
+
+[start]
+cmd = "npm start"
