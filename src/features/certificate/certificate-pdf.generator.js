@@ -2,7 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import htmlPdf from 'html-pdf-node';
 import { format } from 'date-fns';
-import { execSync } from 'child_process';
 import { config } from '../../config/config.js';
 import { Logger } from '../../config/logger.js';
 
@@ -14,34 +13,13 @@ if (!fs.existsSync(PDF_DIR)) fs.mkdirSync(PDF_DIR, { recursive: true });
 const NAVY = '#1a365d';
 
 // ---- Chromium path resolver (Nixpacks / Coolify VPS fix) ----
-let cachedChromiumPath;
-// function resolveChromiumPath() {
-if (cachedChromiumPath !== undefined) return cachedChromiumPath;
-
-if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-  cachedChromiumPath = process.env.PUPPETEER_EXECUTABLE_PATH;
-  log.info(`Using Chromium from PUPPETEER_EXECUTABLE_PATH: ${cachedChromiumPath}`);
-  return cachedChromiumPath;
-}
-
-try {
-  cachedChromiumPath = execSync('which chromium').toString().trim();
-  log.info(`Resolved Chromium path via 'which chromium': ${cachedChromiumPath}`);
-} catch (err) {
-  log.warn(`Could not resolve chromium via 'which': ${err.message}. Falling back to Puppeteer default.`);
-  cachedChromiumPath = undefined;
-}
-
-return cachedChromiumPath;
-// }
 function resolveChromiumPath() {
-  // Only use explicit env var if it's set AND not the broken Ubuntu apt stub
-  if (
-    process.env.PUPPETEER_EXECUTABLE_PATH &&
-    !process.env.PUPPETEER_EXECUTABLE_PATH.includes('chromium-browser')
-  ) {
-    log.info(`Using Chromium from PUPPETEER_EXECUTABLE_PATH: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
-    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+
+  // Only trust an explicit env var if it's set AND not the broken Ubuntu apt stub
+  if (envPath && !envPath.includes('chromium-browser')) {
+    log.info(`Using Chromium from PUPPETEER_EXECUTABLE_PATH: ${envPath}`);
+    return envPath;
   }
 
   // Otherwise let Puppeteer use its own bundled/downloaded Chromium
