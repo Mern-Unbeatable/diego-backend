@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import htmlPdf from 'html-pdf-node';
 import { format } from 'date-fns';
+import { execSync } from 'child_process';
 import { config } from '../../config/config.js';
 import { Logger } from '../../config/logger.js';
 
@@ -12,11 +13,34 @@ if (!fs.existsSync(PDF_DIR)) fs.mkdirSync(PDF_DIR, { recursive: true });
 
 const NAVY = '#1a365d';
 
+// ---- Chromium path resolver (Nixpacks / Coolify VPS fix) ----
+let cachedChromiumPath;
+function resolveChromiumPath() {
+  if (cachedChromiumPath !== undefined) return cachedChromiumPath;
+
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    cachedChromiumPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    log.info(`Using Chromium from PUPPETEER_EXECUTABLE_PATH: ${cachedChromiumPath}`);
+    return cachedChromiumPath;
+  }
+
+  try {
+    cachedChromiumPath = execSync('which chromium').toString().trim();
+    log.info(`Resolved Chromium path via 'which chromium': ${cachedChromiumPath}`);
+  } catch (err) {
+    log.warn(`Could not resolve chromium via 'which': ${err.message}. Falling back to Puppeteer default.`);
+    cachedChromiumPath = undefined;
+  }
+
+  return cachedChromiumPath;
+}
+// ---------------------------------------------------------------
+
 const escapeHtml = (value = '') => String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;');
 
 const buildGoldSealSvg = () => `
 <svg width="96" height="108" viewBox="0 0 96 108" xmlns="http://www.w3.org/2000/svg">
@@ -44,8 +68,8 @@ const buildGoldSealSvg = () => `
 </svg>`;
 
 const buildSignatureBlock = (signatory) => {
-    if (!signatory?.name) return '<div class="sig-block"></div>';
-    return `
+  if (!signatory?.name) return '<div class="sig-block"></div>';
+  return `
       <div class="sig-block">
         <div class="sig-line"></div>
         <div class="sig-name">${escapeHtml(signatory.name)}</div>
@@ -55,37 +79,37 @@ const buildSignatureBlock = (signatory) => {
 };
 
 const buildClassicCertificateHtml = ({
-    studentName,
-    courseTitle,
-    organizationName,
-    issueDate,
-    completedAt,
-    certificateId,
-    certificateTemplateConfig,
-    companyLogoUrl,
-    qrCodeUrl,
+  studentName,
+  courseTitle,
+  organizationName,
+  issueDate,
+  completedAt,
+  certificateId,
+  certificateTemplateConfig,
+  companyLogoUrl,
+  qrCodeUrl,
 }) => {
-    const cfg = certificateTemplateConfig || {};
-    const primaryColor = cfg.colors?.primary || NAVY;
-    const titleText = cfg.titleText || 'Certificate of Completion';
-    const presentedToLabel = cfg.presentedToLabel || 'PRESENTED TO';
-    const completionLabel = cfg.completionLabel || 'for completing the';
-    const hostedByLabel = cfg.hostedByLabel || 'hosted by';
+  const cfg = certificateTemplateConfig || {};
+  const primaryColor = cfg.colors?.primary || NAVY;
+  const titleText = cfg.titleText || 'Certificate of Completion';
+  const presentedToLabel = cfg.presentedToLabel || 'PRESENTED TO';
+  const completionLabel = cfg.completionLabel || 'for completing the';
+  const hostedByLabel = cfg.hostedByLabel || 'hosted by';
 
-    const signatories = cfg.signatories || [
-        { name: 'Hannah Morales', title: 'Director', position: 'left' },
-        { name: 'Emma Jackson', title: 'President', position: 'right' },
-    ];
-    const leftSignatory = signatories.find(s => s.position === 'left') || signatories[0];
-    const rightSignatory = signatories.find(s => s.position === 'right') || signatories[1];
+  const signatories = cfg.signatories || [
+    { name: 'Hannah Morales', title: 'Director', position: 'left' },
+    { name: 'Emma Jackson', title: 'President', position: 'right' },
+  ];
+  const leftSignatory = signatories.find(s => s.position === 'left') || signatories[0];
+  const rightSignatory = signatories.find(s => s.position === 'right') || signatories[1];
 
-    const formattedIssueDate = issueDate ? format(new Date(issueDate), 'dd MMMM yyyy') : '';
-    const formattedCompletedAt = completedAt ? format(new Date(completedAt), 'dd MMMM yyyy') : '';
-    const showQr = cfg.showQrCode === true;
-    const showDates = cfg.showIssueDate === true;
-    const showMeta = cfg.showCertificateId === true;
+  const formattedIssueDate = issueDate ? format(new Date(issueDate), 'dd MMMM yyyy') : '';
+  const formattedCompletedAt = completedAt ? format(new Date(completedAt), 'dd MMMM yyyy') : '';
+  const showQr = cfg.showQrCode === true;
+  const showDates = cfg.showIssueDate === true;
+  const showMeta = cfg.showCertificateId === true;
 
-    return `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -282,46 +306,46 @@ const buildClassicCertificateHtml = ({
 };
 
 const buildCustomBackgroundHtml = ({
-    studentName,
-    courseTitle,
-    organizationName,
-    issueDate,
-    completedAt,
-    certificateId,
-    certificateTemplateUrl,
-    certificateTemplateConfig,
-    companyLogoUrl,
-    qrCodeUrl,
+  studentName,
+  courseTitle,
+  organizationName,
+  issueDate,
+  completedAt,
+  certificateId,
+  certificateTemplateUrl,
+  certificateTemplateConfig,
+  companyLogoUrl,
+  qrCodeUrl,
 }) => {
-    const cfg = certificateTemplateConfig || {};
-    const fields = cfg.fields || {};
-    const primaryColor = cfg.colors?.primary || NAVY;
-    const isPortrait = cfg.layout !== 'landscape';
+  const cfg = certificateTemplateConfig || {};
+  const fields = cfg.fields || {};
+  const primaryColor = cfg.colors?.primary || NAVY;
+  const isPortrait = cfg.layout !== 'landscape';
 
-    const fieldStyle = (fieldKey, defaults) => {
-        const merged = { ...defaults, ...(fields[fieldKey] || {}) };
-        const css = ['position:absolute', 'text-align:center'];
-        if (merged.top) css.push(`top:${merged.top}`);
-        if (merged.bottom) css.push(`bottom:${merged.bottom}`);
-        if (merged.left) css.push(`left:${merged.left}`);
-        if (merged.right) css.push(`right:${merged.right}`);
-        if (merged.fontSize) css.push(`font-size:${merged.fontSize}`);
-        if (merged.color) css.push(`color:${merged.color}`);
-        if (merged.fontWeight) css.push(`font-weight:${merged.fontWeight}`);
-        if (merged.width) css.push(`width:${merged.width}`);
-        if (merged.fontFamily) css.push(`font-family:${merged.fontFamily}`);
-        if (!merged.left && !merged.right && (merged.top || merged.bottom)) {
-            css.push('left:50%', 'transform:translateX(-50%)', 'width:80%');
-        }
-        return css.join(';');
-    };
+  const fieldStyle = (fieldKey, defaults) => {
+    const merged = { ...defaults, ...(fields[fieldKey] || {}) };
+    const css = ['position:absolute', 'text-align:center'];
+    if (merged.top) css.push(`top:${merged.top}`);
+    if (merged.bottom) css.push(`bottom:${merged.bottom}`);
+    if (merged.left) css.push(`left:${merged.left}`);
+    if (merged.right) css.push(`right:${merged.right}`);
+    if (merged.fontSize) css.push(`font-size:${merged.fontSize}`);
+    if (merged.color) css.push(`color:${merged.color}`);
+    if (merged.fontWeight) css.push(`font-weight:${merged.fontWeight}`);
+    if (merged.width) css.push(`width:${merged.width}`);
+    if (merged.fontFamily) css.push(`font-family:${merged.fontFamily}`);
+    if (!merged.left && !merged.right && (merged.top || merged.bottom)) {
+      css.push('left:50%', 'transform:translateX(-50%)', 'width:80%');
+    }
+    return css.join(';');
+  };
 
-    const formattedIssueDate = issueDate ? format(new Date(issueDate), 'dd MMMM yyyy') : '';
-    const formattedCompletedAt = completedAt ? format(new Date(completedAt), 'dd MMMM yyyy') : '';
-    const pageW = isPortrait ? '210mm' : '297mm';
-    const pageH = isPortrait ? '297mm' : '210mm';
+  const formattedIssueDate = issueDate ? format(new Date(issueDate), 'dd MMMM yyyy') : '';
+  const formattedCompletedAt = completedAt ? format(new Date(completedAt), 'dd MMMM yyyy') : '';
+  const pageW = isPortrait ? '210mm' : '297mm';
+  const pageH = isPortrait ? '297mm' : '210mm';
 
-    return `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -360,64 +384,77 @@ const buildCustomBackgroundHtml = ({
 };
 
 const buildCertificateHtml = (payload) => {
-    if (payload.certificateTemplateUrl) {
-        return buildCustomBackgroundHtml(payload);
-    }
-    return buildClassicCertificateHtml(payload);
+  if (payload.certificateTemplateUrl) {
+    return buildCustomBackgroundHtml(payload);
+  }
+  return buildClassicCertificateHtml(payload);
 };
 
 export async function generateCertificatePdf({
+  certificateId,
+  studentName,
+  courseTitle,
+  organizationName = 'LMS Platform',
+  issueDate,
+  completedAt,
+  certificateTemplateUrl = null,
+  certificateTemplateConfig = null,
+  companyLogoUrl = null,
+  qrCodeUrl = null,
+}) {
+  const html = buildCertificateHtml({
     certificateId,
     studentName,
     courseTitle,
-    organizationName = 'LMS Platform',
+    organizationName,
     issueDate,
     completedAt,
-    certificateTemplateUrl = null,
-    certificateTemplateConfig = null,
-    companyLogoUrl = null,
-    qrCodeUrl = null,
-}) {
-    const html = buildCertificateHtml({
-        certificateId,
-        studentName,
-        courseTitle,
-        organizationName,
-        issueDate,
-        completedAt,
-        certificateTemplateUrl,
-        certificateTemplateConfig,
-        companyLogoUrl,
-        qrCodeUrl,
-    });
+    certificateTemplateUrl,
+    certificateTemplateConfig,
+    companyLogoUrl,
+    qrCodeUrl,
+  });
 
-    const useLandscape = certificateTemplateConfig?.layout === 'landscape' && !!certificateTemplateUrl;
-    const options = {
-        format: 'A4',
-        landscape: useLandscape,
-        preferCSSPageSize: true,
-        printBackground: true,
-        margin: { top: '0', right: '0', bottom: '0', left: '0' },
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    };
+  const useLandscape = certificateTemplateConfig?.layout === 'landscape' && !!certificateTemplateUrl;
+  const executablePath = resolveChromiumPath();
+  const options = {
+    format: 'A4',
+    landscape: useLandscape,
+    preferCSSPageSize: true,
+    printBackground: true,
+    margin: { top: '0', right: '0', bottom: '0', left: '0' },
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+    ],
+    ...(executablePath && { executablePath }),
+  };
 
-    const pdfBuffer = await htmlPdf.generatePdf({ content: html }, options);
-    const filename = `${certificateId}.pdf`;
-    const filePath = path.join(PDF_DIR, filename);
+  let pdfBuffer;
+  try {
+    pdfBuffer = await htmlPdf.generatePdf({ content: html }, options);
+  } catch (err) {
+    log.error(`PDF generation failed. executablePath="${options.executablePath || 'default'}": ${err.message}`);
+    throw err;
+  }
 
-    await fs.promises.writeFile(filePath, pdfBuffer);
+  const filename = `${certificateId}.pdf`;
+  const filePath = path.join(PDF_DIR, filename);
 
-    const baseUrl = config.BACKEND_URL || `http://localhost:${config.PORT || 5000}`;
-    const pdfUrl = `${baseUrl}/uploads/certificates/pdfs/${filename}`;
+  await fs.promises.writeFile(filePath, pdfBuffer);
 
-    log.info(`Certificate PDF created: ${filename} for ${studentName}`);
-    return { pdfUrl, filePath, filename };
+  const baseUrl = config.BACKEND_URL || `https://api-diego.maktechgroup.tech:${config.PORT || 5000}`;
+  const pdfUrl = `${baseUrl}/uploads/certificates/pdfs/${filename}`;
+
+  log.info(`Certificate PDF created: ${filename} for ${studentName}`);
+  return { pdfUrl, filePath, filename };
 }
 
 export async function deleteCertificatePdf(certificateId) {
-    const filePath = path.join(PDF_DIR, `${certificateId}.pdf`);
-    if (fs.existsSync(filePath)) {
-        await fs.promises.unlink(filePath);
-        log.info(`Deleted old certificate PDF: ${certificateId}.pdf`);
-    }
+  const filePath = path.join(PDF_DIR, `${certificateId}.pdf`);
+  if (fs.existsSync(filePath)) {
+    await fs.promises.unlink(filePath);
+    log.info(`Deleted old certificate PDF: ${certificateId}.pdf`);
+  }
 }

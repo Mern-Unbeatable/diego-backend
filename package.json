@@ -36,6 +36,11 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "puppeteer"
+    ]
+  },
   "lint-staged": {
     "*.{js}": [
       "eslint --fix",

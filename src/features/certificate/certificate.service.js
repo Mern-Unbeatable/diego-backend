@@ -612,6 +612,7 @@ export class CertificateService {
         }
 
         await prisma.certificate.update({
+
             where: { id },
             data: {
                 downloadCount: { increment: 1 },
