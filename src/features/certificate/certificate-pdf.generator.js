@@ -12,13 +12,10 @@ if (!fs.existsSync(PDF_DIR)) fs.mkdirSync(PDF_DIR, { recursive: true });
 
 const NAVY = '#1a365d';
 
-// ---- Chromium path resolver (Nixpacks / Coolify VPS fix) ----
-
 function resolveChromiumPath() {
   const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
 
-  // ⚠️ CRITICAL: DELETE the env var if it points to the broken Ubuntu snap stub.
-  // Puppeteer reads this env var INTERNALLY — just returning undefined is not enough.
+
   if (envPath && envPath.includes('chromium-browser')) {
     log.warn(
       `Removing broken PUPPETEER_EXECUTABLE_PATH="${envPath}" — ` +
@@ -53,7 +50,7 @@ const escapeHtml = (value = '') => String(value)
   .replace(/"/g, '&quot;');
 
 const buildGoldSealSvg = () => `
-<svg width="96" height="108" viewBox="0 0 96 108" xmlns="http://www.w3.org/2000/svg">
+<svg width="104" height="118" viewBox="0 0 96 108" xmlns="http://www.w3.org/2000/svg" style="display:block;">
   <defs>
     <radialGradient id="sealGold" cx="38%" cy="32%" r="68%">
       <stop offset="0%" stop-color="#f7e7a8"/>
@@ -132,145 +129,157 @@ const buildClassicCertificateHtml = ({
       margin: 0;
       padding: 0;
       overflow: hidden;
-      background: #fff;
+      background: #ffffff;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     .page {
+      position: relative;
       width: 210mm;
       height: 297mm;
       max-height: 297mm;
       overflow: hidden;
       background: #ffffff;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
       page-break-after: avoid;
       page-break-inside: avoid;
-      position: relative;
     }
     .company-logo {
       position: absolute;
-      top: 18px;
+      top: 14mm;
       left: 50%;
       transform: translateX(-50%);
-      max-height: 48px;
-      max-width: 120px;
+      max-height: 14mm;
+      max-width: 34mm;
       object-fit: contain;
+      z-index: 2;
     }
     .header {
-      width: 100%;
-      padding-top: ${companyLogoUrl ? '72px' : '52px'};
+      position: absolute;
+      top: ${companyLogoUrl ? '30mm' : '22mm'};
+      left: 0;
+      right: 0;
       text-align: center;
-      flex-shrink: 0;
     }
     .arched-title {
-      width: 100%;
-      height: 72px;
+      width: 180mm;
+      height: 32mm;
       display: block;
+      margin: 0 auto;
     }
     .presented-to {
-      margin-top: 18px;
+      margin-top: 4mm;
       font-family: Georgia, 'Times New Roman', serif;
-      font-size: 10px;
-      letter-spacing: 5px;
+      font-size: 11pt;
+      letter-spacing: 0.6em;
       color: ${primaryColor};
       text-transform: uppercase;
+      font-weight: 400;
     }
     .name-section {
-      width: 100%;
+      position: absolute;
+      top: 74mm;
+      left: 0;
+      right: 0;
       text-align: center;
-      margin-top: 28px;
-      flex-shrink: 0;
     }
     .student-name {
       font-family: 'Great Vibes', 'Brush Script MT', cursive;
-      font-size: 58px;
+      font-size: 58pt;
+      font-weight: 400;
       color: ${primaryColor};
-      line-height: 1;
-      padding: 0 40px;
+      line-height: 1.0;
+      padding: 0 16mm;
       word-break: break-word;
+      letter-spacing: 0.5px;
     }
     .name-underline {
-      width: 62%;
-      max-width: 420px;
-      margin: 10px auto 0;
-      border-top: 1.5px solid ${primaryColor};
+      width: 64%;
+      max-width: 128mm;
+      margin: 2.5mm auto 0;
+      border-top: 1.2pt solid ${primaryColor};
     }
     .body-text {
-      width: 78%;
-      max-width: 520px;
+      position: absolute;
+      top: 107mm;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 82%;
+      max-width: 145mm;
       text-align: center;
-      margin-top: 32px;
-      flex-shrink: 0;
     }
-    .course-line {
-      font-family: 'Roboto Slab', Georgia, serif;
-      font-size: 15px;
+    .course-line,
+    .hosted-line {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 11.5pt;
+      font-weight: 400;
       color: ${primaryColor};
-      line-height: 1.7;
+      line-height: 1.5;
+      letter-spacing: 0.3px;
     }
     .hosted-line {
-      font-family: 'Roboto Slab', Georgia, serif;
-      font-size: 15px;
-      color: ${primaryColor};
-      margin-top: 4px;
-      line-height: 1.7;
+      margin-top: 0.8mm;
     }
     .date-line {
-      margin-top: 16px;
-      font-family: Georgia, serif;
-      font-size: 11px;
+      margin-top: 4mm;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 9pt;
       color: ${primaryColor};
     }
     .footer {
-      width: 100%;
-      margin-top: auto;
-      padding: 0 48px 52px;
+      position: absolute;
+      left: 18mm;
+      right: 18mm;
+      bottom: 46mm;
       display: flex;
       align-items: flex-end;
       justify-content: space-between;
-      flex-shrink: 0;
     }
     .sig-block {
-      width: 30%;
+      width: 48mm;
       text-align: center;
+      flex-shrink: 0;
     }
     .sig-line {
-      border-top: 1.5px solid ${primaryColor};
-      margin-bottom: 8px;
+      border-top: 1pt solid ${primaryColor};
+      margin-bottom: 3mm;
     }
     .sig-name {
       font-family: Georgia, 'Times New Roman', serif;
-      font-size: 13px;
+      font-size: 10.5pt;
       color: ${primaryColor};
+      line-height: 1.3;
+      letter-spacing: 0.2px;
     }
     .sig-title {
       font-family: Georgia, 'Times New Roman', serif;
-      font-size: 12px;
+      font-size: 10pt;
       font-weight: 700;
       color: ${primaryColor};
-      margin-top: 2px;
+      margin-top: 1.2mm;
+      line-height: 1.3;
     }
     .seal-wrap {
-      width: 30%;
+      width: 48mm;
       display: flex;
       justify-content: center;
       align-items: flex-end;
-      padding-bottom: 2px;
+      flex-shrink: 0;
+      padding-bottom: 0;
     }
     .qr-code {
       position: absolute;
-      bottom: 20px;
-      right: 24px;
-      width: 56px;
-      height: 56px;
+      bottom: 8mm;
+      right: 10mm;
+      width: 15mm;
+      height: 15mm;
     }
     .meta {
       position: absolute;
-      bottom: 12px;
-      left: 24px;
+      bottom: 5mm;
+      left: 10mm;
       font-family: Arial, sans-serif;
-      font-size: 7px;
+      font-size: 6pt;
       color: #cbd5e0;
     }
   </style>
@@ -280,11 +289,11 @@ const buildClassicCertificateHtml = ({
     ${companyLogoUrl ? `<img class="company-logo" src="${escapeHtml(companyLogoUrl)}" alt="logo" />` : ''}
 
     <div class="header">
-      <svg class="arched-title" viewBox="0 0 600 72" xmlns="http://www.w3.org/2000/svg">
+      <svg class="arched-title" viewBox="0 0 600 110" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <defs>
-          <path id="titleCurve" d="M 60,58 Q 300,8 540,58" fill="none"/>
+          <path id="titleCurve" d="M 15,85 Q 300,5 585,85" fill="none"/>
         </defs>
-        <text font-family="Georgia, 'Times New Roman', serif" font-size="30" font-weight="700" fill="${primaryColor}">
+        <text font-family="Georgia, 'Times New Roman', serif" font-size="40" font-weight="700" fill="${primaryColor}">
           <textPath href="#titleCurve" startOffset="50%" text-anchor="middle">${escapeHtml(titleText)}</textPath>
         </text>
       </svg>

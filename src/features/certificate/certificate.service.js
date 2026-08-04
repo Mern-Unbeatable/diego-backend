@@ -21,6 +21,7 @@ import {
     deleteCertificatePdf,
 } from './certificate-pdf.generator.js';
 
+
 const log = new Logger('CertificateService');
 
 const PDF_DIR = path.join(process.cwd(), 'uploads', 'certificates', 'pdfs');
