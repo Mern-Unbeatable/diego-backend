@@ -438,17 +438,17 @@ model Course {
   companyPackage   CoursePackage? @relation("CourseCompanyPackage", fields: [companyPackageId], references: [id])
   code             Json?
 
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  reviews         CourseReview[]
-  favorites       CourseFavorite[]
-  lessons         Lesson[]
-  enrollments     Enrollment[]
-  quizzes         Quiz[]
-  packageItems    PackageItem[]
-  assignedTo      AssignCourse[]
-  certificates    Certificate[]
-  licenseeIncomes LicenseeIncome[]
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  reviews              CourseReview[]
+  favorites            CourseFavorite[]
+  lessons              Lesson[]
+  enrollments          Enrollment[]
+  quizzes              Quiz[]
+  packageItems         PackageItem[]
+  assignedTo           AssignCourse[]
+  certificates         Certificate[]
+  licenseeIncomes      LicenseeIncome[]
   credentialDeliveries CredentialDelivery[]
 
   pricingTiers     CoursePricingTier[]
@@ -728,11 +728,11 @@ model Enrollment {
   companyCoursePurchase   CompanyCoursePurchase? @relation(fields: [companyCoursePurchaseId], references: [id])
   companyCoursePurchaseId String?
   courseRenewals          CourseRenewal[]
+  credentialDelivery      CredentialDelivery?
 
   @@unique([userId, courseId])
   @@index([userId])
   @@index([courseId])
-  credentialDelivery CredentialDelivery?
 }
 
 model CredentialDelivery {
@@ -836,22 +836,22 @@ model CompanyCoursePurchaseRenewal {
 }
 
 model LessonProgress {
-  id            String       @id @default(uuid())
-  enrollmentId  String
-  enrollment    Enrollment   @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
-  lessonId      String
-  lesson        Lesson       @relation(fields: [lessonId], references: [id])
-  completed     Boolean      @default(false)
-  completedAt   DateTime?
-  scormStatus   ScormStatus?
-  scormScore    Float?
-  scormPassed   Boolean?
-  timeSpentSecs      Int      @default(0)
-  watchPercent       Int      @default(0)
-  lastPositionSecs   Int      @default(0)
-  scormData          Json?
-  startedAt          DateTime?
-  location           String?
+  id               String       @id @default(uuid())
+  enrollmentId     String
+  enrollment       Enrollment   @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  lessonId         String
+  lesson           Lesson       @relation(fields: [lessonId], references: [id])
+  completed        Boolean      @default(false)
+  completedAt      DateTime?
+  scormStatus      ScormStatus?
+  scormScore       Float?
+  scormPassed      Boolean?
+  timeSpentSecs    Int          @default(0)
+  watchPercent     Int          @default(0)
+  lastPositionSecs Int          @default(0)
+  scormData        Json?
+  startedAt        DateTime?
+  location         String?
 
   @@unique([enrollmentId, lessonId])
   @@index([enrollmentId])
@@ -1254,24 +1254,24 @@ model User {
   tenant      Tenant? @relation("TenantUsers", fields: [tenantId], references: [id])
   ownedTenant Tenant? @relation("TenantOwner")
 
-  enrollments         Enrollment[]
-  certificates        Certificate[]
-  payments            Payment[]
-  invoices            Invoice[]
-  notifications       Notification[]
-  alerts              Alert[]
-  accessLogs          AccessLog[]
-  auditLogs           AuditLog[]
-  coursesCreated      Course[]             @relation("CourseCreatedBy")
-  coursesAsTeacher    Course[]             @relation("CourseTeacher")
-  coursesAsTutor      Course[]             @relation("CourseTutor")
-  archiveSubscription ArchiveSubscription?
-  supportTickets      SupportTicket[]
-  license             License?
-  assignedCourses     AssignCourse[]       @relation("AssignedToUser")
-  assignedByMe        AssignCourse[]       @relation("AssignedByUser")
-  calendarSyncs       CalendarSync[]
-  credentialDeliveries CredentialDelivery[] @relation("CredentialDeliveries")
+  enrollments           Enrollment[]
+  certificates          Certificate[]
+  payments              Payment[]
+  invoices              Invoice[]
+  notifications         Notification[]
+  alerts                Alert[]
+  accessLogs            AccessLog[]
+  auditLogs             AuditLog[]
+  coursesCreated        Course[]             @relation("CourseCreatedBy")
+  coursesAsTeacher      Course[]             @relation("CourseTeacher")
+  coursesAsTutor        Course[]             @relation("CourseTutor")
+  archiveSubscription   ArchiveSubscription?
+  supportTickets        SupportTicket[]
+  license               License?
+  assignedCourses       AssignCourse[]       @relation("AssignedToUser")
+  assignedByMe          AssignCourse[]       @relation("AssignedByUser")
+  calendarSyncs         CalendarSync[]
+  credentialDeliveries  CredentialDelivery[] @relation("CredentialDeliveries")
   credentialsAssignedBy CredentialDelivery[] @relation("CredentialsAssignedBy")
 
   createdAt       DateTime         @default(now())
