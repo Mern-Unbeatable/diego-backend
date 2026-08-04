@@ -320,7 +320,7 @@ class EmailService {
         ${accessCourses.length > 0 ? `
         <h3>Direct Course Access</h3>
         <ul>${accessCourses.map((c) => `<li><a href="${c.accessUrl}">${c.title}</a>${c.expiresAt ? ` (expires: ${new Date(c.expiresAt).toLocaleDateString('it-IT')})` : ''}</li>`).join('')}</ul>` : ''}
-        <p><a href="${config.CLIENT_URL}/login" style="background:#3498db;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block">Login to LMS</a></p>
+        <p><a href="${config.CLIENT_URL}/auth/login" style="background:#3498db;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block">Login to LMS</a></p>
       </div>`,
     });
   }
