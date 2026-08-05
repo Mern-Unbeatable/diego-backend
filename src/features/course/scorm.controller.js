@@ -15,10 +15,21 @@ const rewriteUrlForRequestOrigin = (absoluteUrl, req) => {
 
     try {
         const parsed = new URL(absoluteUrl);
-        const requestOrigin = `${req.protocol}://${req.get('host')}`;
         const backendOrigin = new URL(config.getApiBaseUrl()).origin;
+        const requestOrigin = `${req.protocol}://${req.get('host')}`;
 
-        if (parsed.origin === backendOrigin && requestOrigin !== backendOrigin) {
+        // Stale dev URLs saved in DB (localhost) -> current API host
+        if (/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(parsed.origin)) {
+            return `${backendOrigin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+        }
+
+        // Local dev only: Vite proxies /uploads on the frontend origin
+        if (
+            config.NODE_ENV !== 'production'
+            && parsed.origin === backendOrigin
+            && requestOrigin !== backendOrigin
+            && parsed.pathname.startsWith('/uploads/')
+        ) {
             return `${requestOrigin}${parsed.pathname}${parsed.search}${parsed.hash}`;
         }
     } catch {
