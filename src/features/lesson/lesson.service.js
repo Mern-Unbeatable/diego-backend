@@ -241,7 +241,7 @@ export class LessonService {
 
         if (['SCORM', 'SCORM_12'].includes(data.contentType) && looksLikeScormZipUrl(data.scormPackageUrl)) {
             throw new BadRequestError(
-                'SCORM package could not be extracted. Upload a single SCORM .zip (not AllGolfExamples bundle).',
+                'SCORM package could not be extracted. Upload a single valid SCORM .zip package.',
             );
         }
 

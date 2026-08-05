@@ -53,6 +53,13 @@ const runUnzip = async (zipPath, destDir) => {
 
 const LESSONS_SCORM_DIR = path.join(process.cwd(), 'uploads', 'lessons', 'scorm');
 
+/** Multer appends `-{timestamp}-{random}` before .zip — strip it to match re-uploads. */
+const getUploadStem = (fileName) => {
+    const withoutExt = fileName.replace(/\.zip$/i, '');
+    const match = withoutExt.match(/^(.+)-\d{13}-\d{1,10}$/);
+    return match ? match[1] : withoutExt;
+};
+
 const resolveLocalScormZipPath = (scormPackageUrl) => {
     const fromUrl = urlToLocalPath(scormPackageUrl);
     if (fromUrl && fs.existsSync(fromUrl)) return fromUrl;
@@ -73,11 +80,10 @@ const resolveLocalScormZipPath = (scormPackageUrl) => {
     const stemMatch = zipFiles.find((f) => f.replace(/\.zip$/i, '') === stem);
     if (stemMatch) return path.join(LESSONS_SCORM_DIR, stemMatch);
 
-    // Same bundle family (e.g. multiple AllGolfExamples uploads with different timestamps)
-    if (/AllGolfExamples/i.test(basename)) {
-        const siblings = zipFiles.filter((f) => /AllGolfExamples/i.test(f)).sort();
-        if (siblings.length) return path.join(LESSONS_SCORM_DIR, siblings.at(-1));
-    }
+    // Same original file re-uploaded with a new multer suffix (any SCORM name).
+    const uploadStem = getUploadStem(basename);
+    const siblings = zipFiles.filter((f) => getUploadStem(f) === uploadStem).sort();
+    if (siblings.length) return path.join(LESSONS_SCORM_DIR, siblings.at(-1));
 
     return fromUrl;
 };
