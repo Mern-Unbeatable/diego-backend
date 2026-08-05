@@ -1,10 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import AdmZip from 'adm-zip';
 import { config } from '../../config/config.js';
-
-const execAsync = promisify(exec);
 const SCORM_ROOT = path.join(process.cwd(), 'uploads', 'scorm');
 
 const getBaseUrl = () => (config.BACKEND_URL || config.API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -49,9 +46,9 @@ const copyDirRecursive = (src, dest) => {
 };
 
 const runUnzip = async (zipPath, destDir) => {
-    await execAsync(`unzip -o "${zipPath}" -d "${destDir}"`, {
-        maxBuffer: 64 * 1024 * 1024,
-    });
+    fs.mkdirSync(destDir, { recursive: true });
+    const zip = new AdmZip(zipPath);
+    zip.extractAllTo(destDir, true);
 };
 
 const LESSONS_SCORM_DIR = path.join(process.cwd(), 'uploads', 'lessons', 'scorm');
