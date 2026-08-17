@@ -2,7 +2,7 @@ import { Logger } from '../../config/logger.js';
 import { catchAsync } from '../../shared/globals/decorators/catch-async.js';
 import { ResponseHandler } from '../../shared/globals/helpers/response.handler.js';
 import { platformSettingService } from './platformSetting.service.js';
-import { updateEmergencyControlsSchema, updateCertificateArchivePlanSchema } from './platformSetting.validation.js';
+import { updateEmergencyControlsSchema, updateCertificateArchivePlanSchema, updateFinancialSettingsSchema } from './platformSetting.validation.js';
 
 class PlatformSettingController {
     constructor() {
@@ -65,6 +65,26 @@ class PlatformSettingController {
         ResponseHandler.success(res, {
             message: 'Certificate archive plan updated successfully',
             data: plan,
+        });
+    });
+
+    getFinancialSettings = catchAsync(async (req, res) => {
+        const settings = await platformSettingService.getFinancialSettings();
+
+        ResponseHandler.success(res, {
+            message: 'Financial settings fetched successfully',
+            data: settings,
+        });
+    });
+
+    updateFinancialSettings = catchAsync(async (req, res) => {
+        const payload = updateFinancialSettingsSchema.parse(req.body);
+        await platformSettingService.updateFinancialSettings(payload, req.user.id);
+        const settings = await platformSettingService.getFinancialSettings();
+
+        ResponseHandler.success(res, {
+            message: 'Financial settings updated successfully',
+            data: settings,
         });
     });
 }

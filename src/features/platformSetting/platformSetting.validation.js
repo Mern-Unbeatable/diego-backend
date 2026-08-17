@@ -25,3 +25,13 @@ export const updateCertificateArchivePlanSchema = z.object({
     (data) => Object.keys(data).length > 0,
     { message: 'At least one archive plan field must be provided' },
 );
+
+export const updateFinancialSettingsSchema = z.object({
+    currency: z.string().length(3).optional(),
+    taxRate: z.number().min(0).max(100).optional(),
+    stripeEnabled: z.boolean().optional(),
+    paypalEnabled: z.boolean().optional(),
+}).refine(
+    (data) => Object.keys(data).length > 0,
+    { message: 'At least one financial setting must be provided' },
+);

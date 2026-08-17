@@ -17,6 +17,14 @@ export const verifyPaymentIntentSchema = z.object({
   { message: 'payment_intent_id is required' },
 );
 
+export const verifyPayPalOrderSchema = z.object({
+  order_id: z.string().min(1).optional(),
+  orderId: z.string().min(1).optional(),
+}).refine(
+  (data) => Boolean(data.order_id || data.orderId),
+  { message: 'orderId is required' },
+);
+
 export const paymentQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),

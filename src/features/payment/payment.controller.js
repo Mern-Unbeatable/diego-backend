@@ -9,6 +9,7 @@ import {
   courseRenewalCheckoutSchema,
   companyCourseRenewalCheckoutSchema,
   verifyPaymentIntentSchema,
+  verifyPayPalOrderSchema,
 } from './payment.validation.js';
 
 class PaymentController {
@@ -86,6 +87,49 @@ class PaymentController {
 
     ResponseHandler.success(res, {
       message: result.paid ? 'Payment verified and enrollment created' : 'Payment not completed yet',
+      data: result,
+    });
+  });
+
+  createCoursePayPalOrder = catchAsync(async (req, res) => {
+    const { courseId, couponCode } = createCourseCheckoutSchema.parse(req.body);
+    const userId = req.user.id;
+    const returnUrl = req.body?.returnUrl || null;
+    const cancelUrl = req.body?.cancelUrl || null;
+
+    const result = await paymentService.createCoursePayPalOrder({
+      userId,
+      courseId,
+      couponCode,
+      returnUrl,
+      cancelUrl,
+    });
+
+    if (result.type === 'FREE' || result.flow === 'FREE_ENROLLMENT') {
+      return ResponseHandler.created(res, {
+        message: result.message || 'Successfully enrolled in free course',
+        data: result,
+      });
+    }
+
+    ResponseHandler.created(res, {
+      message: 'PayPal order created',
+      data: result,
+    });
+  });
+
+  verifyCoursePayPalOrder = catchAsync(async (req, res) => {
+    const parsed = verifyPayPalOrderSchema.parse({
+      order_id: req.query.order_id || req.body?.order_id,
+      orderId: req.query.orderId || req.body?.orderId,
+    });
+    const orderId = parsed.order_id || parsed.orderId;
+    const userId = req.user.id;
+
+    const result = await paymentService.verifyCoursePayPalOrder(orderId, userId);
+
+    ResponseHandler.success(res, {
+      message: result.paid ? 'PayPal payment verified and enrollment created' : 'PayPal payment not completed yet',
       data: result,
     });
   });

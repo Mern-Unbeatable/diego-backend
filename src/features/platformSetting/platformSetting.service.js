@@ -81,7 +81,70 @@ class PlatformSettingService {
             downloadPermissionEnabled: settings.downloadPermissionEnabled,
             newUserRegistrationEnabled: settings.newUserRegistrationEnabled,
             paymentProcessingEnabled: settings.paymentProcessingEnabled,
+            stripeEnabled: settings.stripeEnabled,
+            paypalEnabled: settings.paypalEnabled,
+            defaultCurrency: settings.defaultCurrency,
+            defaultTaxRate: settings.defaultTaxRate,
         };
+    }
+
+    async getFinancialSettings() {
+        const settings = await this.getSettings();
+
+        return {
+            currency: settings.defaultCurrency,
+            taxRate: settings.defaultTaxRate,
+            stripeEnabled: settings.stripeEnabled,
+            paypalEnabled: settings.paypalEnabled,
+            updatedAt: settings.updatedAt,
+            updatedById: settings.updatedById,
+        };
+    }
+
+    async updateFinancialSettings(payload, userId) {
+        const settings = await this.getSettings();
+        const stripeEnabled = payload.stripeEnabled ?? settings.stripeEnabled;
+        const paypalEnabled = payload.paypalEnabled ?? settings.paypalEnabled;
+
+        if (!stripeEnabled && !paypalEnabled) {
+            throw new Error('At least one payment gateway must remain enabled.');
+        }
+
+        const data = {};
+
+        if (payload.currency !== undefined) data.defaultCurrency = payload.currency.toUpperCase();
+        if (payload.taxRate !== undefined) data.defaultTaxRate = payload.taxRate;
+        if (payload.stripeEnabled !== undefined) data.stripeEnabled = payload.stripeEnabled;
+        if (payload.paypalEnabled !== undefined) data.paypalEnabled = payload.paypalEnabled;
+
+        const updated = await prisma.platformSetting.update({
+            where: { id: 'global' },
+            data: {
+                ...data,
+                updatedById: userId,
+            },
+        });
+
+        this._invalidateCache();
+        log.info(`Financial settings updated by ${userId}`, data);
+
+        return updated;
+    }
+
+    async assertStripeEnabled() {
+        const settings = await this.getSettings();
+        if (!settings.stripeEnabled) {
+            throw new Error('Stripe payments are disabled by the platform administrator.');
+        }
+        return settings;
+    }
+
+    async assertPayPalEnabled() {
+        const settings = await this.getSettings();
+        if (!settings.paypalEnabled) {
+            throw new Error('PayPal payments are disabled by the platform administrator.');
+        }
+        return settings;
     }
 
     async updateEmergencyControls(payload, userId) {

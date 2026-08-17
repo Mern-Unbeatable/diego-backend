@@ -7,6 +7,7 @@ import { notificationService } from '../notification/notification.service.js';
 import { activateArchiveSubscription } from '../certificate/certificate.archive.js';
 import { PLATFORM_FEE_PERCENT } from '../Income/Income.constants.js';
 import { platformSettingService } from '../platformSetting/platformSetting.service.js';
+import { paypalService } from './paypal.service.js';
 
 const stripe = new Stripe(config.STRIPE_SECRET_KEY);
 const log = new Logger('PaymentService');
@@ -1578,6 +1579,7 @@ class PaymentService {
 
   async createCoursePaymentIntent({ userId, courseId, couponCode = null }) {
     await this._assertPaymentProcessingEnabled();
+    await platformSettingService.assertStripeEnabled();
 
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, tenantId: true } });
     if (!user) throw new Error('User not found');
@@ -1710,6 +1712,168 @@ class PaymentService {
       });
       await tx.payment.updateMany({
         where: { stripePaymentIntentId: paymentIntentId, userId },
+        data: { enrollmentId: newEnrollment.id },
+      });
+      if (couponId) {
+        await tx.coupon.update({ where: { id: couponId }, data: { usedCount: { increment: 1 } } });
+      }
+      await this._recordLicenseIncomeForCoursePayment(tx, {
+        paymentId: payment.id,
+        courseId,
+        grossAmount: payment.amount,
+      });
+      return newEnrollment;
+    });
+
+    return { paid: true, alreadyProcessed: false, enrollment };
+  }
+
+  async createCoursePayPalOrder({ userId, courseId, couponCode = null, returnUrl = null, cancelUrl = null }) {
+    await this._assertPaymentProcessingEnabled();
+    await platformSettingService.assertPayPalEnabled();
+
+    if (!paypalService.isConfigured()) {
+      throw new Error('PayPal is not configured on the server');
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, tenantId: true } });
+    if (!user) throw new Error('User not found');
+
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { id: true, courseTitle: true, slug: true, price: true, basePrice: true, isActive: true, validityDays: true, tenantId: true },
+    });
+    if (!course) throw new Error('Course not found');
+    if (!course.isActive) throw new Error('Course is not active');
+
+    const existingEnrollment = await prisma.enrollment.findUnique({
+      where: { userId_courseId: { userId, courseId } },
+      select: { id: true, status: true },
+    });
+    if (existingEnrollment) {
+      throw new Error(existingEnrollment.status === 'COMPLETED'
+        ? 'You have already completed this course'
+        : 'You are already enrolled in this course');
+    }
+
+    const settings = await platformSettingService.getSettings();
+    const coupon = await this._resolveCoupon(couponCode, course.tenantId);
+    const originalPrice = this._resolveSingleCoursePrice(course);
+    const finalPrice = this._applyDiscount(originalPrice, coupon);
+    const courseTitle = course.courseTitle?.en || course.courseTitle?.it || Object.values(course.courseTitle || {})[0] || 'Course';
+    const currency = settings.defaultCurrency || 'EUR';
+
+    if (finalPrice <= 0) {
+      const freeResult = await this.createCourseCheckout({ userId, courseId, couponCode });
+      return { ...freeResult, flow: 'FREE_ENROLLMENT' };
+    }
+
+    const payment = await prisma.payment.create({
+      data: {
+        userId,
+        courseId,
+        type: 'SINGLE_COURSE',
+        status: 'PENDING',
+        amount: finalPrice,
+        currency,
+        paymentProvider: 'PAYPAL',
+        tenantId: course.tenantId,
+        ...(coupon && { couponId: coupon.id }),
+      },
+    });
+
+    const order = await paypalService.createOrder({
+      amount: finalPrice,
+      currency,
+      description: `${courseTitle} — Course enrollment`,
+      paymentId: `${payment.id}:${courseId}`,
+      returnUrl,
+      cancelUrl,
+    });
+
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: { paypalOrderId: order.id },
+    });
+
+    return {
+      provider: 'PAYPAL',
+      orderId: order.id,
+      paypalClientId: config.PAYPAL_CLIENT_ID,
+      amount: payment.amount,
+      currency: payment.currency,
+      paymentId: payment.id,
+      originalPrice,
+      finalPrice,
+      discount: originalPrice - finalPrice,
+      courseId,
+      courseTitle,
+    };
+  }
+
+  async verifyCoursePayPalOrder(orderId, userId) {
+    const payment = await prisma.payment.findFirst({
+      where: { paypalOrderId: orderId, userId, paymentProvider: 'PAYPAL' },
+    });
+    if (!payment) throw new Error('Payment record not found for this PayPal order');
+
+    if (payment.status === 'SUCCESS') {
+      const enrollment = payment.enrollmentId
+        ? await prisma.enrollment.findUnique({
+            where: { id: payment.enrollmentId },
+            include: { course: { select: { id: true, slug: true, courseTitle: true } } },
+          })
+        : null;
+      return { paid: true, alreadyProcessed: true, enrollment };
+    }
+
+    const capture = await paypalService.captureOrder(orderId);
+    if (capture.status !== 'COMPLETED') {
+      return { paid: false, message: `PayPal status: ${capture.status}` };
+    }
+
+    const captureId = capture.purchase_units?.[0]?.payments?.captures?.[0]?.id || null;
+    const courseId = payment.courseId;
+    const couponId = payment.couponId;
+    if (!courseId) throw new Error('Missing courseId for PayPal payment');
+
+    const updateResult = await prisma.payment.updateMany({
+      where: { paypalOrderId: orderId, userId, status: 'PENDING' },
+      data: { status: 'SUCCESS', paypalCaptureId: captureId },
+    });
+
+    if (updateResult.count === 0) {
+      const enrollment = payment.enrollmentId
+        ? await prisma.enrollment.findUnique({
+            where: { id: payment.enrollmentId },
+            include: { course: { select: { id: true, slug: true, courseTitle: true } } },
+          })
+        : null;
+      return { paid: true, alreadyProcessed: true, enrollment };
+    }
+
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { id: true, validityDays: true, isActive: true },
+    });
+    if (!course || !course.isActive) throw new Error('Course not found or inactive');
+
+    const existingEnrollment = await prisma.enrollment.findUnique({
+      where: { userId_courseId: { userId, courseId } },
+      select: { id: true },
+    });
+    if (existingEnrollment) {
+      return { paid: true, alreadyProcessed: false, enrollment: existingEnrollment };
+    }
+
+    const expiresAt = addDays(new Date(), course.validityDays || 90);
+    const enrollment = await prisma.$transaction(async (tx) => {
+      const newEnrollment = await tx.enrollment.create({
+        data: { courseId, userId, expiresAt, status: 'NOT_STARTED' },
+        include: { course: { select: { id: true, slug: true, courseTitle: true, tenantId: true } } },
+      });
+      await tx.payment.updateMany({
+        where: { paypalOrderId: orderId, userId },
         data: { enrollmentId: newEnrollment.id },
       });
       if (couponId) {

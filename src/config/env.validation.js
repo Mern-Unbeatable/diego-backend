@@ -6,6 +6,22 @@ dotenv.config();
 
 const logger = new Logger('env-validation');
 
+const emptyToUndefined = (value) => {
+  if (value == null) return undefined;
+  const text = String(value).trim();
+  return text.length ? text : undefined;
+};
+
+const paypalModeSchema = z.preprocess((value) => {
+  const text = emptyToUndefined(value);
+  if (!text) return undefined;
+
+  const normalized = text.replace(/['"]/g, '').toLowerCase();
+  if (['local', 'dev', 'development', 'test'].includes(normalized)) return 'sandbox';
+  if (['prod', 'production'].includes(normalized)) return 'live';
+  return normalized;
+}, z.enum(['sandbox', 'live']).optional().default('sandbox'));
+
 const schema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']),
@@ -59,6 +75,10 @@ const schema = z
     STRIPE_PUBLISHABLE_KEY: z.string().min(1, 'STRIPE_PUBLISHABLE_KEY required').optional(),
     STRIPE_WEBHOOK_SECRET: z.string().min(1, 'STRIPE_WEBHOOK_SECRET required'),
 
+    PAYPAL_CLIENT_ID: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+    PAYPAL_CLIENT_SECRET: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+    PAYPAL_MODE: paypalModeSchema,
+
     // google translate
     GOOGLE_TRANSLATE_API_KEY: z.string().min(1, 'GOOGLE_TRANSLATE_API_KEY required'),
 
@@ -87,7 +107,13 @@ const schema = z
 const parsed = schema.safeParse(process.env);
 
 if (!parsed.success) {
-  logger.error('❌ Invalid environment variables:', parsed.error.format());
+  const issues = parsed.error.issues.map((issue) => {
+    const path = issue.path.join('.') || '(root)';
+    return `- ${path}: ${issue.message}`;
+  });
+  const summary = `❌ Invalid environment variables:\n${issues.join('\n')}`;
+  logger.error(summary);
+  console.error(summary);
   process.exit(1);
 }
 

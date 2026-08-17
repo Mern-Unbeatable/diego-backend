@@ -57,6 +57,7 @@ export class CustomError extends Error {
       status: this.status,
       statusCode: this.statusCode,
       message: this.message,
+      ...(this.code ? { code: this.code } : {}),
       ...(process.env.NODE_ENV === 'development' && { stack: this.stack }),
     };
   }

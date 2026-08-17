@@ -111,6 +111,11 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum PaymentProvider {
+  STRIPE
+  PAYPAL
+}
+
 enum InvoiceStatus {
   NOT_REQUESTED
   PENDING
@@ -453,6 +458,7 @@ model Course {
 
   pricingTiers     CoursePricingTier[]
   companyPurchases CompanyCoursePurchase[]
+  payments         Payment[]
 
   @@index([singleUserPackageId])
   @@index([companyPackageId])
@@ -771,6 +777,8 @@ model Payment {
   status   PaymentStatus @default(PENDING)
   amount   Float
   currency String        @default("EUR")
+  courseId String?
+  course   Course?       @relation(fields: [courseId], references: [id])
 
   tenantId String?
   tenant   Tenant? @relation(fields: [tenantId], references: [id])
@@ -778,6 +786,9 @@ model Payment {
   stripeSessionId       String?
   stripePaymentIntentId String?
   stripeCustomerId      String?
+  paymentProvider       PaymentProvider @default(STRIPE)
+  paypalOrderId         String?
+  paypalCaptureId       String?
 
   packagePurchaseId String?          @unique
   packagePurchase   PackagePurchase? @relation(fields: [packagePurchaseId], references: [id])
@@ -1381,6 +1392,10 @@ model PlatformSetting {
   downloadPermissionEnabled  Boolean @default(true)
   newUserRegistrationEnabled Boolean @default(true)
   paymentProcessingEnabled   Boolean @default(true)
+  stripeEnabled              Boolean @default(true)
+  paypalEnabled              Boolean @default(false)
+  defaultCurrency            String  @default("EUR")
+  defaultTaxRate             Float   @default(0)
   maintenanceModeEnabled     Boolean @default(false)
   maintenanceMessage         Json?
 

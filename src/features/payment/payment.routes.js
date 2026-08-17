@@ -13,6 +13,9 @@ router.post('/checkout/course', paymentController.createCourseCheckout);
 router.get('/verify', paymentController.verifyAndEnroll);
 router.post('/intent/course', paymentController.createCoursePaymentIntent);
 router.get('/intent/course/verify', paymentController.verifyCoursePaymentIntent);
+router.post('/paypal/course/order', paymentController.createCoursePayPalOrder);
+router.post('/paypal/course/capture', paymentController.verifyCoursePayPalOrder);
+router.get('/paypal/course/capture', paymentController.verifyCoursePayPalOrder);
 
 // ── Company corporate course — first purchase ──
 const companyGuard = authMiddleware.authorize('COMPANY_ADMIN', 'PLATFORM_ADMIN');
