@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "PlatformSetting"
+ADD COLUMN IF NOT EXISTS "applePayEnabled" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN IF NOT EXISTS "googlePayEnabled" BOOLEAN NOT NULL DEFAULT true;

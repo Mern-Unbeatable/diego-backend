@@ -369,6 +369,17 @@ class PaymentService {
     return customer.id;
   }
 
+  _buildStripePaymentIntentParams({ amountCents, currency, customer, metadata, description }) {
+    return {
+      amount: amountCents,
+      currency: String(currency || 'EUR').toLowerCase(),
+      customer,
+      automatic_payment_methods: { enabled: true },
+      metadata,
+      description,
+    };
+  }
+
   async _resolveCoupon(couponCode, tenantId, applicableType = 'COURSE') {
     if (!couponCode) return null;
     const coupon = await prisma.coupon.findUnique({ where: { code: couponCode }, select: { id: true, discountType: true, discountValue: true, maxUses: true, usedCount: true, expiresAt: true, applicableTo: true, isActive: true, tenantId: true } });
@@ -721,27 +732,28 @@ class PaymentService {
     }
 
     const stripeCustomerId = await this._getOrCreateStripeCustomer(userId);
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(finalTotal * 100),
-      currency: 'eur',
-      customer: stripeCustomerId,
-      payment_method_types: ['card'],
-      metadata: {
-        userId,
-        courseId,
-        companyId: requester.companyId,
-        seatsCount: String(pricing.seatsCount),
-        pricePerUser: String(pricing.pricePerUser),
-        tierId: pricing.tierId || '',
-        tierMinUsers: String(pricing.minUsers),
-        tierMaxUsers: pricing.maxUsers != null ? String(pricing.maxUsers) : '',
-        pricingSource: pricing.source,
-        type: 'COMPANY_COURSE_PURCHASE',
-        couponId: coupon?.id ?? '',
-        tenantId: course.tenantId ?? '',
-      },
-      description: `${courseTitle} — Corporate (${pricing.seatsCount} users)`,
-    });
+    const paymentIntent = await stripe.paymentIntents.create(
+      this._buildStripePaymentIntentParams({
+        amountCents: Math.round(finalTotal * 100),
+        currency: 'EUR',
+        customer: stripeCustomerId,
+        metadata: {
+          userId,
+          courseId,
+          companyId: requester.companyId,
+          seatsCount: String(pricing.seatsCount),
+          pricePerUser: String(pricing.pricePerUser),
+          tierId: pricing.tierId || '',
+          tierMinUsers: String(pricing.minUsers),
+          tierMaxUsers: pricing.maxUsers != null ? String(pricing.maxUsers) : '',
+          pricingSource: pricing.source,
+          type: 'COMPANY_COURSE_PURCHASE',
+          couponId: coupon?.id ?? '',
+          tenantId: course.tenantId ?? '',
+        },
+        description: `${courseTitle} — Corporate (${pricing.seatsCount} users)`,
+      }),
+    );
 
     const payment = await prisma.payment.create({
       data: {
@@ -1612,20 +1624,21 @@ class PaymentService {
     }
 
     const stripeCustomerId = await this._getOrCreateStripeCustomer(userId);
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(finalPrice * 100),
-      currency: 'eur',
-      customer: stripeCustomerId,
-      payment_method_types: ['card'],
-      metadata: {
-        userId,
-        courseId,
-        type: 'SINGLE_COURSE',
-        couponId: coupon?.id ?? '',
-        tenantId: course.tenantId ?? '',
-      },
-      description: `${courseTitle} — Course enrollment`,
-    });
+    const paymentIntent = await stripe.paymentIntents.create(
+      this._buildStripePaymentIntentParams({
+        amountCents: Math.round(finalPrice * 100),
+        currency: 'EUR',
+        customer: stripeCustomerId,
+        metadata: {
+          userId,
+          courseId,
+          type: 'SINGLE_COURSE',
+          couponId: coupon?.id ?? '',
+          tenantId: course.tenantId ?? '',
+        },
+        description: `${courseTitle} — Course enrollment`,
+      }),
+    );
 
     const payment = await prisma.payment.create({
       data: {
@@ -1913,18 +1926,19 @@ class PaymentService {
     const effectiveTenantId = tenantId || user.tenantId || null;
     const stripeCustomerId = await this._getOrCreateStripeCustomer(userId);
 
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(finalPrice * 100),
-      currency: archivePlan.currency.toLowerCase(),
-      customer: stripeCustomerId,
-      automatic_payment_methods: { enabled: true },
-      metadata: {
-        userId,
-        type: 'ARCHIVE_STORAGE',
-        tenantId: effectiveTenantId ?? '',
-      },
-      description: `${archivePlan.name} (${archivePlan.durationDays} days)`,
-    });
+    const paymentIntent = await stripe.paymentIntents.create(
+      this._buildStripePaymentIntentParams({
+        amountCents: Math.round(finalPrice * 100),
+        currency: archivePlan.currency,
+        customer: stripeCustomerId,
+        metadata: {
+          userId,
+          type: 'ARCHIVE_STORAGE',
+          tenantId: effectiveTenantId ?? '',
+        },
+        description: `${archivePlan.name} (${archivePlan.durationDays} days)`,
+      }),
+    );
 
     const payment = await prisma.payment.create({
       data: {

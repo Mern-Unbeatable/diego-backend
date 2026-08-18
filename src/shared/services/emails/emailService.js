@@ -4,30 +4,51 @@
 import nodemailer from 'nodemailer';
 import { Logger } from '../../../config/logger.js';
 import { config } from '../../../config/config.js';
+import { platformSettingService } from '../../../features/platformSetting/platformSetting.service.js';
 
 const log = new Logger('EmailService');
 
 class EmailService {
   constructor() {
-    this.transporter = nodemailer.createTransport({
-      host: config.SMTP_HOST,
-      port: Number(config.SMTP_PORT) || 587,
-      secure: Number(config.SMTP_PORT) === 465,
-      auth: {
-        user: config.SMTP_USER,
-        pass: (config.SMTP_PASS || '').replace(/\s+/g, ''),
-      },
-      requireTLS: Number(config.SMTP_PORT) === 587,
-    });
-
-
+    this._transporter = null;
+    this._transporterKey = null;
     this._verifyConnection();
+  }
+
+  async _getTransporter() {
+    const smtp = await platformSettingService.getSmtpConfig();
+    const key = `${smtp.host}:${smtp.port}:${smtp.user}`;
+
+    if (this._transporter && this._transporterKey === key) {
+      return this._transporter;
+    }
+
+    this._transporter = nodemailer.createTransport({
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.port === 465,
+      auth: {
+        user: smtp.user,
+        pass: smtp.pass,
+      },
+      requireTLS: smtp.port === 587,
+    });
+    this._transporterKey = key;
+
+    return this._transporter;
   }
 
   async _verifyConnection() {
     try {
-      await this.transporter.verify();
-      log.info(`✅ SMTP connection verified successfully (${config.SMTP_HOST}:${config.SMTP_PORT}, user: ${config.SMTP_USER})`);
+      const smtp = await platformSettingService.getSmtpConfig();
+      if (!smtp.host || !smtp.user || !smtp.pass) {
+        log.warn('SMTP not configured — emails will NOT be sent until SMTP_HOST, SMTP_USER and SMTP_PASS are set.');
+        return;
+      }
+
+      const transporter = await this._getTransporter();
+      await transporter.verify();
+      log.info(`✅ SMTP connection verified successfully (${smtp.host}:${smtp.port}, user: ${smtp.user})`);
     } catch (err) {
       log.error(`❌ SMTP connection FAILED — emails will NOT be sent. Reason: ${err.message}`);
       log.error(`   Check: 1) SMTP_PASS has no spaces  2) SMTP_FROM matches SMTP_USER's domain  3) 2FA + App Password enabled on the Gmail account`);
@@ -40,9 +61,12 @@ class EmailService {
       return null;
     }
     try {
-      const info = await this.transporter.sendMail({
+      const smtp = await platformSettingService.getSmtpConfig();
+      const transporter = await this._getTransporter();
+      const fromAddress = smtp.fromEmail || config.SMTP_FROM || config.SMTP_USER;
+      const info = await transporter.sendMail({
 
-        from: `"LMS Platform" <${config.SMTP_FROM || config.SMTP_USER}>`,
+        from: `"LMS Platform" <${fromAddress}>`,
         to,
         subject,
         html,

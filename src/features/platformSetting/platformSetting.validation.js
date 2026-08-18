@@ -31,7 +31,42 @@ export const updateFinancialSettingsSchema = z.object({
     taxRate: z.number().min(0).max(100).optional(),
     stripeEnabled: z.boolean().optional(),
     paypalEnabled: z.boolean().optional(),
+    applePayEnabled: z.boolean().optional(),
+    googlePayEnabled: z.boolean().optional(),
 }).refine(
     (data) => Object.keys(data).length > 0,
     { message: 'At least one financial setting must be provided' },
+);
+
+export const updateSystemSettingsSchema = z.object({
+    smtpHost: z.string().max(255).optional().nullable(),
+    smtpPort: z.number().int().min(1).max(65535).optional().nullable(),
+    smtpFromEmail: z.string().email().optional().nullable(),
+    emailTemplates: z.record(z.object({
+        enabled: z.boolean().optional(),
+        subject: z.union([z.string().min(1), z.record(z.string())]).optional(),
+        bodyHtml: z.union([z.string().min(1), z.record(z.string())]).optional(),
+    })).optional(),
+}).refine(
+    (data) => Object.keys(data).length > 0,
+    { message: 'At least one system setting must be provided' },
+);
+
+export const updateBrandSettingsSchema = z.object({
+    platformName: z.string().min(1).max(120).optional(),
+    primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Primary color must be a valid hex code').optional(),
+    platformLogoUrl: z.string().url().optional().nullable(),
+}).refine(
+    (data) => Object.keys(data).length > 0,
+    { message: 'At least one brand setting must be provided' },
+);
+
+export const updateWebhookSettingsSchema = z.object({
+    webhooks: z.record(z.object({
+        enabled: z.boolean().optional(),
+        url: z.union([z.string().url(), z.literal('')]).optional().nullable(),
+    })),
+}).refine(
+    (data) => Object.keys(data.webhooks || {}).length > 0,
+    { message: 'At least one webhook must be provided' },
 );

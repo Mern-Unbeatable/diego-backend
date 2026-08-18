@@ -1,9 +1,15 @@
 import { prisma } from '../../config/db.js';
+import { config } from '../../config/config.js';
 import { MaintenanceModeError } from '../../shared/globals/helpers/error-handler.js';
 import { Logger } from '../../config/logger.js';
+import { expandI18nFromEnglish } from '../../shared/services/translate/translate.service.js';
 import {
+    DEFAULT_BRAND_SETTINGS,
     DEFAULT_CERTIFICATE_ARCHIVE_PLAN,
+    DEFAULT_EMAIL_TEMPLATES,
+    EMAIL_TEMPLATE_PLACEHOLDERS,
     DEFAULT_PLATFORM_SETTINGS,
+    DEFAULT_WEBHOOK_ENDPOINTS,
     EMERGENCY_CONTROL_LABELS,
     PLATFORM_SETTING_KEYS,
 } from './platformSetting.constants.js';
@@ -83,8 +89,13 @@ class PlatformSettingService {
             paymentProcessingEnabled: settings.paymentProcessingEnabled,
             stripeEnabled: settings.stripeEnabled,
             paypalEnabled: settings.paypalEnabled,
+            applePayEnabled: settings.applePayEnabled,
+            googlePayEnabled: settings.googlePayEnabled,
             defaultCurrency: settings.defaultCurrency,
             defaultTaxRate: settings.defaultTaxRate,
+            platformName: settings.platformName || DEFAULT_BRAND_SETTINGS.platformName,
+            primaryColor: settings.primaryColor || DEFAULT_BRAND_SETTINGS.primaryColor,
+            platformLogoUrl: settings.platformLogoUrl || null,
         };
     }
 
@@ -96,6 +107,8 @@ class PlatformSettingService {
             taxRate: settings.defaultTaxRate,
             stripeEnabled: settings.stripeEnabled,
             paypalEnabled: settings.paypalEnabled,
+            applePayEnabled: settings.applePayEnabled,
+            googlePayEnabled: settings.googlePayEnabled,
             updatedAt: settings.updatedAt,
             updatedById: settings.updatedById,
         };
@@ -116,6 +129,8 @@ class PlatformSettingService {
         if (payload.taxRate !== undefined) data.defaultTaxRate = payload.taxRate;
         if (payload.stripeEnabled !== undefined) data.stripeEnabled = payload.stripeEnabled;
         if (payload.paypalEnabled !== undefined) data.paypalEnabled = payload.paypalEnabled;
+        if (payload.applePayEnabled !== undefined) data.applePayEnabled = payload.applePayEnabled;
+        if (payload.googlePayEnabled !== undefined) data.googlePayEnabled = payload.googlePayEnabled;
 
         const updated = await prisma.platformSetting.update({
             where: { id: 'global' },
@@ -127,6 +142,259 @@ class PlatformSettingService {
 
         this._invalidateCache();
         log.info(`Financial settings updated by ${userId}`, data);
+
+        return updated;
+    }
+
+    _mergeEmailTemplates(stored, locale = 'it') {
+        const storedMap = stored && typeof stored === 'object' ? stored : {};
+
+        return Object.entries(DEFAULT_EMAIL_TEMPLATES).map(([key, defaults]) => {
+            const override = storedMap[key] || {};
+            const merged = {
+                ...defaults,
+                ...override,
+                id: key,
+            };
+
+            return {
+                ...merged,
+                label: this._resolveLocalizedText(merged.name, locale) || key,
+                subjectText: this._resolveLocalizedText(merged.subject, locale) || '',
+                bodyHtmlText: this._resolveLocalizedText(merged.bodyHtml, locale) || '',
+                subjectEn: merged.subject?.en || merged.subject?.it || '',
+                bodyHtmlEn: merged.bodyHtml?.en || merged.bodyHtml?.it || '',
+                placeholders: EMAIL_TEMPLATE_PLACEHOLDERS[key] || [],
+            };
+        });
+    }
+
+    async _normalizeEmailTemplateUpdate(templateUpdate = {}) {
+        const normalized = { ...templateUpdate };
+
+        if (typeof templateUpdate.subject === 'string' && templateUpdate.subject.trim()) {
+            normalized.subject = await expandI18nFromEnglish(templateUpdate.subject.trim(), { html: false });
+        }
+
+        if (typeof templateUpdate.bodyHtml === 'string' && templateUpdate.bodyHtml.trim()) {
+            normalized.bodyHtml = await expandI18nFromEnglish(templateUpdate.bodyHtml.trim(), { html: true });
+        }
+
+        return normalized;
+    }
+
+    _resolveSmtpConfig(settings) {
+        return {
+            host: settings.smtpHost || config.SMTP_HOST || '',
+            port: Number(settings.smtpPort ?? config.SMTP_PORT ?? 587),
+            fromEmail: settings.smtpFromEmail || config.SMTP_FROM || config.SMTP_USER || '',
+            user: config.SMTP_USER || '',
+            pass: (config.SMTP_PASS || '').replace(/\s+/g, ''),
+        };
+    }
+
+    async getSmtpConfig() {
+        const settings = await this.getSettings();
+        return this._resolveSmtpConfig(settings);
+    }
+
+    async getSystemSettings(locale = 'it') {
+        const settings = await this.getSettings();
+        const smtp = this._resolveSmtpConfig(settings);
+
+        return {
+            smtpHost: smtp.host,
+            smtpPort: smtp.port,
+            smtpFromEmail: smtp.fromEmail,
+            smtpConfigured: Boolean(smtp.host && smtp.user && smtp.pass),
+            emailTemplates: this._mergeEmailTemplates(settings.emailTemplates, locale),
+            updatedAt: settings.updatedAt,
+            updatedById: settings.updatedById,
+        };
+    }
+
+    async updateSystemSettings(payload, userId) {
+        const settings = await this.getSettings();
+        const data = {};
+
+        if (payload.smtpHost !== undefined) data.smtpHost = payload.smtpHost || null;
+        if (payload.smtpPort !== undefined) data.smtpPort = payload.smtpPort ?? null;
+        if (payload.smtpFromEmail !== undefined) data.smtpFromEmail = payload.smtpFromEmail || null;
+
+        if (payload.emailTemplates !== undefined) {
+            const current = settings.emailTemplates && typeof settings.emailTemplates === 'object'
+                ? settings.emailTemplates
+                : {};
+
+            const mergedTemplates = { ...current };
+            for (const [templateId, templateUpdate] of Object.entries(payload.emailTemplates)) {
+                mergedTemplates[templateId] = {
+                    ...(current[templateId] || {}),
+                    ...(await this._normalizeEmailTemplateUpdate(templateUpdate)),
+                };
+            }
+
+            data.emailTemplates = mergedTemplates;
+        }
+
+        const updated = await prisma.platformSetting.update({
+            where: { id: 'global' },
+            data: {
+                ...data,
+                updatedById: userId,
+            },
+        });
+
+        this._invalidateCache();
+        log.info(`System settings updated by ${userId}`, data);
+
+        return updated;
+    }
+
+    async testSmtpConnection(locale = 'it') {
+        const smtp = await this.getSmtpConfig();
+
+        if (!smtp.host || !smtp.user || !smtp.pass) {
+            throw new Error('SMTP is not fully configured. Set host in admin settings and credentials in server environment.');
+        }
+
+        const nodemailer = (await import('nodemailer')).default;
+        const transporter = nodemailer.createTransport({
+            host: smtp.host,
+            port: smtp.port,
+            secure: smtp.port === 465,
+            auth: {
+                user: smtp.user,
+                pass: smtp.pass,
+            },
+            requireTLS: smtp.port === 587,
+        });
+
+        await transporter.verify();
+
+        return {
+            host: smtp.host,
+            port: smtp.port,
+            fromEmail: smtp.fromEmail,
+            verifiedAt: new Date().toISOString(),
+            message: locale === 'it'
+                ? 'Connessione SMTP verificata con successo'
+                : 'SMTP connection verified successfully',
+        };
+    }
+
+    async getBrandSettings() {
+        const settings = await this.getSettings();
+
+        return {
+            platformName: settings.platformName || DEFAULT_BRAND_SETTINGS.platformName,
+            primaryColor: settings.primaryColor || DEFAULT_BRAND_SETTINGS.primaryColor,
+            platformLogoUrl: settings.platformLogoUrl || null,
+            updatedAt: settings.updatedAt,
+            updatedById: settings.updatedById,
+        };
+    }
+
+    async updateBrandSettings(payload, userId) {
+        const data = {};
+
+        if (payload.platformName !== undefined) data.platformName = payload.platformName.trim();
+        if (payload.primaryColor !== undefined) data.primaryColor = payload.primaryColor;
+        if (payload.platformLogoUrl !== undefined) data.platformLogoUrl = payload.platformLogoUrl || null;
+
+        const updated = await prisma.platformSetting.update({
+            where: { id: 'global' },
+            data: {
+                ...data,
+                updatedById: userId,
+            },
+        });
+
+        this._invalidateCache();
+        log.info(`Brand settings updated by ${userId}`, data);
+
+        return updated;
+    }
+
+    _mergeWebhookEndpoints(stored, locale = 'it') {
+        const storedMap = stored && typeof stored === 'object' ? stored : {};
+
+        return Object.entries(DEFAULT_WEBHOOK_ENDPOINTS).map(([key, defaults]) => {
+            const override = storedMap[key] || {};
+            const merged = {
+                ...defaults,
+                ...override,
+                id: key,
+            };
+            const enabled = merged.enabled !== false;
+
+            return {
+                id: key,
+                event: merged.event,
+                name: this._resolveLocalizedText(merged.name, locale) || key,
+                enabled,
+                url: merged.url || '',
+                status: enabled ? 'Active' : 'Inactive',
+            };
+        });
+    }
+
+    async getWebhookSettings(locale = 'it') {
+        const settings = await this.getSettings();
+
+        return {
+            webhooks: this._mergeWebhookEndpoints(settings.webhookEndpoints, locale),
+            updatedAt: settings.updatedAt,
+            updatedById: settings.updatedById,
+        };
+    }
+
+    async updateWebhookSettings(payload, userId) {
+        const settings = await this.getSettings();
+        const current = settings.webhookEndpoints && typeof settings.webhookEndpoints === 'object'
+            ? settings.webhookEndpoints
+            : {};
+
+        const merged = { ...current };
+
+        for (const [webhookId, webhookUpdate] of Object.entries(payload.webhooks || {})) {
+            if (!DEFAULT_WEBHOOK_ENDPOINTS[webhookId]) {
+                throw new Error(`Unknown webhook endpoint: ${webhookId}`);
+            }
+
+            const next = {
+                ...(current[webhookId] || {}),
+                ...webhookUpdate,
+            };
+
+            if (webhookUpdate.url !== undefined) {
+                next.url = webhookUpdate.url ? String(webhookUpdate.url).trim() : '';
+            }
+
+            if (next.enabled && next.url) {
+                try {
+                    const parsed = new URL(next.url);
+                    if (!['http:', 'https:'].includes(parsed.protocol)) {
+                        throw new Error('Webhook URL must use http or https');
+                    }
+                } catch {
+                    throw new Error(`Invalid webhook URL for "${webhookId}"`);
+                }
+            }
+
+            merged[webhookId] = next;
+        }
+
+        const updated = await prisma.platformSetting.update({
+            where: { id: 'global' },
+            data: {
+                webhookEndpoints: merged,
+                updatedById: userId,
+            },
+        });
+
+        this._invalidateCache();
+        log.info(`Webhook settings updated by ${userId}`, payload.webhooks);
 
         return updated;
     }

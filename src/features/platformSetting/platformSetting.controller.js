@@ -2,7 +2,7 @@ import { Logger } from '../../config/logger.js';
 import { catchAsync } from '../../shared/globals/decorators/catch-async.js';
 import { ResponseHandler } from '../../shared/globals/helpers/response.handler.js';
 import { platformSettingService } from './platformSetting.service.js';
-import { updateEmergencyControlsSchema, updateCertificateArchivePlanSchema, updateFinancialSettingsSchema } from './platformSetting.validation.js';
+import { updateEmergencyControlsSchema, updateCertificateArchivePlanSchema, updateFinancialSettingsSchema, updateSystemSettingsSchema, updateBrandSettingsSchema, updateWebhookSettingsSchema } from './platformSetting.validation.js';
 
 class PlatformSettingController {
     constructor() {
@@ -84,6 +84,91 @@ class PlatformSettingController {
 
         ResponseHandler.success(res, {
             message: 'Financial settings updated successfully',
+            data: settings,
+        });
+    });
+
+    getSystemSettings = catchAsync(async (req, res) => {
+        const settings = await platformSettingService.getSystemSettings(req.locale);
+
+        ResponseHandler.success(res, {
+            message: 'System settings fetched successfully',
+            data: settings,
+        });
+    });
+
+    updateSystemSettings = catchAsync(async (req, res) => {
+        const payload = updateSystemSettingsSchema.parse(req.body);
+        await platformSettingService.updateSystemSettings(payload, req.user.id);
+        const settings = await platformSettingService.getSystemSettings(req.locale);
+
+        ResponseHandler.success(res, {
+            message: 'System settings updated successfully',
+            data: settings,
+        });
+    });
+
+    testSystemSmtp = catchAsync(async (req, res) => {
+        const result = await platformSettingService.testSmtpConnection(req.locale);
+
+        ResponseHandler.success(res, {
+            message: result.message,
+            data: result,
+        });
+    });
+
+    getBrandSettings = catchAsync(async (req, res) => {
+        const settings = await platformSettingService.getBrandSettings();
+
+        ResponseHandler.success(res, {
+            message: 'Brand settings fetched successfully',
+            data: settings,
+        });
+    });
+
+    updateBrandSettings = catchAsync(async (req, res) => {
+        const payload = updateBrandSettingsSchema.parse(req.body);
+        await platformSettingService.updateBrandSettings(payload, req.user.id);
+        const settings = await platformSettingService.getBrandSettings();
+
+        ResponseHandler.success(res, {
+            message: 'Brand settings updated successfully',
+            data: settings,
+        });
+    });
+
+    uploadBrandLogo = catchAsync(async (req, res) => {
+        const platformLogoUrl = req.body.platformLogoUrl;
+        if (!platformLogoUrl) {
+            throw new Error('No logo file uploaded');
+        }
+
+        await platformSettingService.updateBrandSettings({ platformLogoUrl }, req.user.id);
+        const settings = await platformSettingService.getBrandSettings();
+
+        ResponseHandler.success(res, {
+            message: 'Platform logo uploaded successfully',
+            data: settings,
+        });
+    });
+
+    getWebhookSettings = catchAsync(async (req, res) => {
+        // Keep webhook list labels in English on admin UI for consistency.
+        const settings = await platformSettingService.getWebhookSettings('en');
+
+        ResponseHandler.success(res, {
+            message: 'Webhook settings fetched successfully',
+            data: settings,
+        });
+    });
+
+    updateWebhookSettings = catchAsync(async (req, res) => {
+        const payload = updateWebhookSettingsSchema.parse(req.body);
+        await platformSettingService.updateWebhookSettings(payload, req.user.id);
+        const settings = await platformSettingService.getWebhookSettings('en');
+
+        ResponseHandler.success(res, {
+            message: 'Webhook settings updated successfully',
             data: settings,
         });
     });

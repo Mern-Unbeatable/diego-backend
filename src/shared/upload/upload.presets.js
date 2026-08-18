@@ -74,6 +74,10 @@ export const uploadTenantFiles = createUploadMiddleware([
     { name: 'logoUrl', folder: 'tenants/logos', type: 'image', maxCount: 1, maxSizeMB: 5 },
 ]);
 
+export const uploadPlatformLogo = createUploadMiddleware([
+    { name: 'platformLogo', folder: 'platform/logos', type: 'image', maxCount: 1, maxSizeMB: 5, targetField: 'platformLogoUrl' },
+]);
+
 export const uploadTicketFiles = createUploadMiddleware([
     {
         name: 'attachments',

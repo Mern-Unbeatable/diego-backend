@@ -1394,6 +1394,8 @@ model PlatformSetting {
   paymentProcessingEnabled   Boolean @default(true)
   stripeEnabled              Boolean @default(true)
   paypalEnabled              Boolean @default(false)
+  applePayEnabled            Boolean @default(true)
+  googlePayEnabled           Boolean @default(true)
   defaultCurrency            String  @default("EUR")
   defaultTaxRate             Float   @default(0)
   maintenanceModeEnabled     Boolean @default(false)
@@ -1408,6 +1410,15 @@ model PlatformSetting {
   certificateArchiveStorageMb    Int     @default(1024)
   certificateFreeDownloadDays    Int     @default(30)
   certificateLegalRetentionYears Int     @default(5)
+
+  smtpHost        String?
+  smtpPort        Int?
+  smtpFromEmail   String?
+  platformName    String?
+  primaryColor    String?
+  platformLogoUrl String?
+  emailTemplates  Json?
+  webhookEndpoints Json?
 
   updatedById String?
   updatedAt   DateTime @updatedAt

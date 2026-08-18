@@ -8,14 +8,36 @@ const SOURCE_LOCALE = 'it';
 const API_KEY = process.env.GOOGLE_TRANSLATE_API_KEY;
 const TRANSLATE_URL = 'https://translation.googleapis.com/language/translate/v2';
 
+const PLACEHOLDER_PATTERN = /\{\{[^}]+\}\}/g;
 
-async function translateText(text, targetLocale) {
-    if (!text || targetLocale === SOURCE_LOCALE) return text;
+function protectPlaceholders(text) {
+    const placeholders = [];
+    const protectedText = String(text).replace(PLACEHOLDER_PATTERN, (match) => {
+        const token = `__PH_${placeholders.length}__`;
+        placeholders.push(match);
+        return token;
+    });
+    return { protectedText, placeholders };
+}
+
+function restorePlaceholders(text, placeholders) {
+    let restored = String(text);
+    placeholders.forEach((placeholder, index) => {
+        const token = `__PH_${index}__`;
+        restored = restored.split(token).join(placeholder);
+    });
+    return restored;
+}
+
+async function translateText(text, targetLocale, sourceLocale = SOURCE_LOCALE, { html = false } = {}) {
+    if (!text || targetLocale === sourceLocale) return text;
 
     if (!API_KEY) {
         log.warn('GOOGLE_TRANSLATE_API_KEY not set — skipping translation');
         return text;
     }
+
+    const { protectedText, placeholders } = protectPlaceholders(text);
 
     try {
         const response = await fetch(
@@ -24,10 +46,10 @@ async function translateText(text, targetLocale) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    q: text,
-                    source: SOURCE_LOCALE,
+                    q: protectedText,
+                    source: sourceLocale,
                     target: targetLocale,
-                    format: 'text',
+                    format: html ? 'html' : 'text',
                 }),
             },
         );
@@ -35,11 +57,12 @@ async function translateText(text, targetLocale) {
         if (!response.ok) {
             const err = await response.text();
             log.error(`Translate API error [${targetLocale}]: ${err}`);
-            return text; // fallback: return source text
+            return text;
         }
 
         const data = await response.json();
-        return data?.data?.translations?.[0]?.translatedText ?? text;
+        const translated = data?.data?.translations?.[0]?.translatedText ?? text;
+        return restorePlaceholders(translated, placeholders);
     } catch (error) {
         log.error(`translateText failed [${targetLocale}]: ${error.message}`);
         return text;
@@ -59,6 +82,38 @@ export async function translateAll(italianText) {
     ]);
 
     return { it: italianText, en, fr, zh };
+}
+
+export async function translateAllFromEnglish(englishText, { html = false } = {}) {
+    if (!englishText) {
+        return { it: '', en: '', fr: '', zh: '' };
+    }
+
+    const [it, fr, zh] = await Promise.all([
+        translateText(englishText, 'it', 'en', { html }),
+        translateText(englishText, 'fr', 'en', { html }),
+        translateText(englishText, 'zh', 'en', { html }),
+    ]);
+
+    return { en: englishText, it, fr, zh };
+}
+
+export async function expandI18nFromEnglish(value, { html = false } = {}) {
+    if (!value) return value;
+    if (typeof value === 'string') return translateAllFromEnglish(value, { html });
+
+    const hasAllLocales = SUPPORTED_LOCALES.every((locale) => value[locale]?.trim());
+    if (hasAllLocales) return value;
+
+    const source =
+        value.en?.trim() ||
+        value.it?.trim() ||
+        Object.values(value).find((entry) => typeof entry === 'string' && entry.trim());
+
+    if (!source) return value;
+
+    const translated = await translateAllFromEnglish(source, { html });
+    return { ...translated, ...value, en: source };
 }
 
 
