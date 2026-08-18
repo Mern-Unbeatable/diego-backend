@@ -130,14 +130,25 @@ export class Server {
         },
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Range'],
+        exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length'],
         optionsSuccessStatus: 200,
       }),
     );
   }
 
   standardMiddleware(app) {
-    app.use(compression());
+    app.use(compression({
+      filter: (req, res) => {
+        if (req.path.startsWith('/uploads/')) {
+          return false;
+        }
+        if (/\.(mp4|webm|mov|avi|mkv|ogg)(\?|$)/i.test(req.path)) {
+          return false;
+        }
+        return compression.filter(req, res);
+      },
+    }));
     app.use(json({ limit: '50mb' }));
 
     // Catch malformed/empty JSON bodies immediately, before they reach routes
@@ -174,6 +185,13 @@ export class Server {
       app.use('/uploads', express.static(uploadRoot, {
         maxAge: config.NODE_ENV === 'production' ? '7d' : 0,
         fallthrough: true,
+        acceptRanges: true,
+        setHeaders: (res, filePath) => {
+          if (/\.(mp4|webm|mov|mkv|ogg)$/i.test(filePath)) {
+            res.setHeader('Accept-Ranges', 'bytes');
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+          }
+        },
       }));
     }
 
