@@ -359,7 +359,7 @@ export class SupportTicketService {
                 id: true,
                 subject: true,
                 userId: true,
-                deletedAt: true,
+                // deletedAt: true,
             }
         });
     }
