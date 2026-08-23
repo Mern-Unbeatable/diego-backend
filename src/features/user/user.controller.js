@@ -33,7 +33,7 @@ class UserController {
     });
   });
 
-  // ===== UPDATE PROFILE WITH AVATAR =====
+
   updateProfile = catchAsync(async (req, res) => {
     let avatar = null;
 
