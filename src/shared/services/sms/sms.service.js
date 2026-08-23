@@ -57,7 +57,7 @@ export const normalizePhoneE164 = (raw, defaultCountry = 'BD') => {
     digits = `39${digits}`;
   }
 
-  // E.164 body is 8–15 digits (country code + subscriber)
+
   if (digits.length < 8 || digits.length > 15) {
     return null;
   }
