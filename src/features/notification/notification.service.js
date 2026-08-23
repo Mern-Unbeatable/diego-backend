@@ -1,6 +1,7 @@
 import { prisma } from '../../config/db.js';
 import { Logger } from '../../config/logger.js';
 import { emailService } from '../../shared/services/emails/emailService.js';
+import { smsService } from '../../shared/services/sms/sms.service.js';
 import { localizeObject } from '../../shared/services/translate/translate.service.js';
 import { addDays, subDays, startOfDay, endOfDay, differenceInCalendarDays } from 'date-fns';
 import { config } from '../../config/config.js';
@@ -36,10 +37,16 @@ class NotificationService {
         });
     }
 
-    async notifyCourseAssigned({ userId, email, courses = [], courseTitle, accessUrl = null, expiresAt = null }) {
+    async notifyCourseAssigned({ userId, email, phone = null, courses = [], courseTitle, accessUrl = null, expiresAt = null }) {
         const user = await prisma.user.findUnique({
             where: { id: userId },
-            select: { firstName: true, lastName: true, preferredLanguage: true, tenantId: true },
+            select: {
+                firstName: true,
+                lastName: true,
+                preferredLanguage: true,
+                tenantId: true,
+                contactNumber: true,
+            },
         });
 
         const resolvedCourseTitle = courseTitle
@@ -63,17 +70,25 @@ class NotificationService {
             },
         });
 
-        if (!email) return;
+        if (email) {
+            await emailService.sendEmployeeCourseAccessEmail({
+                to: email,
+                firstName: user?.firstName,
+                lastName: user?.lastName,
+                courseTitle: resolvedCourseTitle,
+                accessUrl,
+                expiresAt,
+                isNewAccount: false,
+            });
+        }
 
-        await emailService.sendEmployeeCourseAccessEmail({
-            to: email,
-            firstName: user?.firstName,
-            lastName: user?.lastName,
-            courseTitle: resolvedCourseTitle,
-            accessUrl,
-            expiresAt,
-            isNewAccount: false,
-        });
+        const destination = phone || user?.contactNumber;
+        if (destination) {
+            await smsService.sendSmsSafe({
+                to: destination,
+                body: `UnoSicurezza: ti e stato assegnato il corso "${resolvedCourseTitle}". Accedi alla piattaforma per iniziare.`,
+            });
+        }
     }
     // In notification.service.js
     async getUserNotifications(userId, queryParams = {}) {
@@ -547,7 +562,7 @@ class NotificationService {
                 user: {
                     select: {
                         id: true, email: true, firstName: true, lastName: true,
-                        preferredLanguage: true, alertsOptOut: true,
+                        preferredLanguage: true, alertsOptOut: true, contactNumber: true,
                     },
                 },
                 course: { select: { id: true, courseTitle: true } },
@@ -591,6 +606,11 @@ class NotificationService {
                     courseTitle,
                 });
                 emailsSent++;
+
+                await smsService.sendSmsSafe({
+                    to: enrollment.user.contactNumber,
+                    body: `UnoSicurezza: non hai ancora iniziato "${courseTitle}". Accedi alla piattaforma per iniziare.`,
+                });
             } catch (err) {
                 errors++;
                 log.error(`Inactive user reminder failed for enrollment=${enrollment.id}:`, err.message);

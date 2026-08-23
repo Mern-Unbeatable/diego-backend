@@ -82,6 +82,13 @@ const schema = z
     // google translate
     GOOGLE_TRANSLATE_API_KEY: z.string().min(1, 'GOOGLE_TRANSLATE_API_KEY required'),
 
+    // Twilio SMS (optional — trial or production credentials)
+    TWILIO_ACCOUNT_SID: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+    TWILIO_AUTH_TOKEN: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+    TWILIO_PHONE_NUMBER: z.preprocess(emptyToUndefined, z.string().min(8).optional()),
+    TWILIO_API_KEY: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+    TWILIO_API_SECRET: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+
     // Admin
     ADMIN_EMAIL: z.string().email('ADMIN_EMAIL must be a valid email'),
     ADMIN_PASSWORD: z.string().min(6, 'ADMIN_PASSWORD must be at least 6 characters'),

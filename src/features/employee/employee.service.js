@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { addYears } from 'date-fns';
 import { emailService } from '../../shared/services/emails/emailService.js';
+import { smsService } from '../../shared/services/sms/sms.service.js';
 import { config } from '../../config/config.js';
 import { certificateService } from '../certificate/certificate.service.js';
 import {
@@ -459,6 +460,7 @@ class EmployeeService {
                         email: true,
                         firstName: true,
                         lastName: true,
+                        contactNumber: true,
                     },
                 },
                 course: { select: { courseTitle: true } },
@@ -478,12 +480,18 @@ class EmployeeService {
             courseTitle,
         });
 
+        const smsResult = await smsService.sendSmsSafe({
+            to: enrollment.user.contactNumber,
+            body: `UnoSicurezza: promemoria corso "${courseTitle}". Accedi alla piattaforma per continuare la formazione.`,
+        });
+
         return {
             sent: true,
             enrollmentId,
             employeeUserId: enrollment.user.id,
             email: enrollment.user.email,
             courseTitle,
+            sms: smsResult,
         };
     }
 

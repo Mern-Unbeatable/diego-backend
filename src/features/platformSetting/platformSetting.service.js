@@ -3,6 +3,7 @@ import { config } from '../../config/config.js';
 import { MaintenanceModeError } from '../../shared/globals/helpers/error-handler.js';
 import { Logger } from '../../config/logger.js';
 import { expandI18nFromEnglish } from '../../shared/services/translate/translate.service.js';
+import { smsService } from '../../shared/services/sms/sms.service.js';
 import {
     DEFAULT_BRAND_SETTINGS,
     DEFAULT_CERTIFICATE_ARCHIVE_PLAN,
@@ -344,8 +345,25 @@ class PlatformSettingService {
 
         return {
             webhooks: this._mergeWebhookEndpoints(settings.webhookEndpoints, locale),
+            sms: smsService.getStatus(),
             updatedAt: settings.updatedAt,
             updatedById: settings.updatedById,
+        };
+    }
+
+    async testSmsConnection({ to, body } = {}, locale = 'it') {
+        const message = body?.trim()
+            || (locale === 'it'
+                ? 'Test SMS UnoSicurezza: Twilio e configurato correttamente.'
+                : 'UnoSicurezza SMS test: Twilio is configured correctly.');
+
+        const result = await smsService.sendSms({ to, body: message });
+
+        return {
+            ...result,
+            message: locale === 'it'
+                ? `SMS di test inviato a ${result.to}`
+                : `Test SMS sent to ${result.to}`,
         };
     }
 

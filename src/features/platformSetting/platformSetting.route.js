@@ -28,5 +28,6 @@ router.patch('/brand', platformAdminGuard, platformSettingController.updateBrand
 router.post('/brand/logo', platformAdminGuard, uploadPlatformLogo, platformSettingController.uploadBrandLogo);
 router.get('/webhooks', platformAdminGuard, platformSettingController.getWebhookSettings);
 router.patch('/webhooks', platformAdminGuard, platformSettingController.updateWebhookSettings);
+router.post('/sms/test', platformAdminGuard, platformSettingController.testSms);
 
 export const platformSettingRoutes = router;

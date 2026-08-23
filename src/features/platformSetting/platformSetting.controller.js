@@ -2,7 +2,7 @@ import { Logger } from '../../config/logger.js';
 import { catchAsync } from '../../shared/globals/decorators/catch-async.js';
 import { ResponseHandler } from '../../shared/globals/helpers/response.handler.js';
 import { platformSettingService } from './platformSetting.service.js';
-import { updateEmergencyControlsSchema, updateCertificateArchivePlanSchema, updateFinancialSettingsSchema, updateSystemSettingsSchema, updateBrandSettingsSchema, updateWebhookSettingsSchema } from './platformSetting.validation.js';
+import { updateEmergencyControlsSchema, updateCertificateArchivePlanSchema, updateFinancialSettingsSchema, updateSystemSettingsSchema, updateBrandSettingsSchema, updateWebhookSettingsSchema, testSmsSchema } from './platformSetting.validation.js';
 
 class PlatformSettingController {
     constructor() {
@@ -170,6 +170,20 @@ class PlatformSettingController {
         ResponseHandler.success(res, {
             message: 'Webhook settings updated successfully',
             data: settings,
+        });
+    });
+
+    testSms = catchAsync(async (req, res) => {
+        const raw = req.body || {};
+        const payload = testSmsSchema.parse({
+            to: raw.to ?? raw.phone ?? raw.number ?? raw.destination,
+            body: raw.body ?? raw.message,
+        });
+        const result = await platformSettingService.testSmsConnection(payload, req.locale);
+
+        ResponseHandler.success(res, {
+            message: result.message,
+            data: result,
         });
     });
 }

@@ -70,3 +70,16 @@ export const updateWebhookSettingsSchema = z.object({
     (data) => Object.keys(data.webhooks || {}).length > 0,
     { message: 'At least one webhook must be provided' },
 );
+
+export const testSmsSchema = z.object({
+    to: z.union([z.string(), z.number()]).transform((value) => String(value).trim()),
+    body: z.string().min(1).max(1600).optional(),
+}).superRefine((data, ctx) => {
+    if (!data.to || data.to.length < 8) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Phone number is required (e.g. +8801825445033)',
+            path: ['to'],
+        });
+    }
+});
