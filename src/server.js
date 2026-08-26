@@ -104,18 +104,28 @@ export class Server {
       }),
     );
 
-    const allowedOrigins = [
+    const normalizeOrigin = (value = '') => value.trim().replace(/\/$/, '');
+    const envClientOrigins = String(process.env.CLIENT_URLS || '')
+      .split(',')
+      .map(normalizeOrigin)
+      .filter(Boolean);
+
+    const allowedOrigins = Array.from(new Set([
       'http://localhost:5173',
       'http://localhost:5174',
-      "https://diego.maktechgroup.tech"
-    ];
+      'https://diego.maktechgroup.tech',
+      'https://www.diego.maktechgroup.tech',
+      ...envClientOrigins,
+    ].map(normalizeOrigin)));
 
     app.use(
       cors({
         origin: (origin, callback) => {
           if (!origin) return callback(null, true);
 
-          if (allowedOrigins.includes(origin)) {
+          const normalizedOrigin = normalizeOrigin(origin);
+
+          if (allowedOrigins.includes(normalizedOrigin)) {
             return callback(null, true);
           }
 
