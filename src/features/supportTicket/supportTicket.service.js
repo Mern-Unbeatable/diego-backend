@@ -33,8 +33,8 @@ export class SupportTicketService {
         const term = search.trim();
         const ticketNumber = Number(term.replace(/^#/, ''));
         const searchFilters = [
-            { subject: { string_contains: term, mode: 'insensitive' } },
-            { message: { string_contains: term, mode: 'insensitive' } },
+            { subject: { string_contains: term } },
+            { message: { string_contains: term } },
             {
                 user: {
                     OR: [
