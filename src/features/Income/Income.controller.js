@@ -130,6 +130,7 @@ class IncomeController {
         });
     });
 
+
     getLicenseUserReport = catchAsync(async (req, res) => {
         const query = licenseUserReportQuerySchema.parse(req.query);
 
