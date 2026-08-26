@@ -959,7 +959,7 @@ export class IncomeService {
 
         return {
             totalSold: {
-                amount: currentIncome._sum.licenseeAmount || 0,
+                amount: Number((currentIncome._sum.licenseeAmount || 0).toFixed(2)),
                 currency: 'EUR',
                 changePercent: this._percentChange(
                     currentIncome._sum.licenseeAmount || 0,
