@@ -1,10 +1,56 @@
 import { prisma } from '../../config/db.js';
-import { localizeObject } from '../../shared/services/translate/translate.service.js';
+import { localizeObject, translateAll, translateAllFromEnglish } from '../../shared/services/translate/translate.service.js';
 
 const TICKET_I18N_KEYS = ['answer', 'question'];
 const CLOSED_STATUSES = ['CLOSED', 'RESOLVED'];
+const SUPPORTED_LOCALES = ['it', 'en', 'fr', 'zh'];
 
 export class SupportTicketService {
+
+    _sanitizeI18nValue(value, { required = false, fieldName = 'i18n field' } = {}) {
+        if (value == null) {
+            if (required) throw new Error(`${fieldName} is required`);
+            return null;
+        }
+
+        if (typeof value !== 'object' || Array.isArray(value)) {
+            throw new Error(`${fieldName} must be an object with locale keys`);
+        }
+
+        const sanitized = {};
+        for (const locale of SUPPORTED_LOCALES) {
+            const raw = value[locale];
+            if (typeof raw !== 'string') continue;
+            const trimmed = raw.trim();
+            if (!trimmed) continue;
+            sanitized[locale] = trimmed;
+        }
+
+        if (required && Object.keys(sanitized).length === 0) {
+            throw new Error(`${fieldName} must include at least one non-empty locale translation`);
+        }
+
+        return Object.keys(sanitized).length > 0 ? sanitized : null;
+    }
+
+    async _maybeExpandQuestionI18n(question, autoTranslateQuestion = false) {
+        if (!question || !autoTranslateQuestion) return question;
+
+        const hasAllLocales = SUPPORTED_LOCALES.every((locale) => typeof question[locale] === 'string' && question[locale].trim());
+        if (hasAllLocales) return question;
+
+        if (question.en?.trim()) {
+            const translated = await translateAllFromEnglish(question.en.trim());
+            return { ...translated, ...question, en: question.en.trim() };
+        }
+
+        if (question.it?.trim()) {
+            const translated = await translateAll(question.it.trim());
+            return { ...translated, ...question, it: question.it.trim() };
+        }
+
+        return question;
+    }
 
     _shouldHideClosedTickets(userLevel) {
         return userLevel !== 'PLATFORM_ADMIN';
@@ -243,7 +289,15 @@ export class SupportTicketService {
     }
 
     async createTicket(data, userId) {
-        const { subject, message, question, attachments } = data;
+        const { subject, message, question, autoTranslateQuestion, attachments } = data;
+        const manualQuestion = this._sanitizeI18nValue(question, {
+            required: false,
+            fieldName: 'question',
+        });
+        const normalizedQuestion = await this._maybeExpandQuestionI18n(
+            manualQuestion,
+            autoTranslateQuestion,
+        );
 
         const user = await prisma.user.findUnique({
             where: { id: userId },
@@ -262,7 +316,7 @@ export class SupportTicketService {
                     userId,
                     subject,
                     message,
-                    question: question || null,
+                    question: normalizedQuestion,
                     attachments: attachments || null,
                     tenantId: user.tenantId || null,
                     status: 'OPEN',
@@ -282,6 +336,7 @@ export class SupportTicketService {
         return this._serializeTicket(ticket, 'it');
     }
 
+
     async _updateTicketRecord(id, data) {
         return prisma.supportTicket.update({
             where: { id },
@@ -292,6 +347,12 @@ export class SupportTicketService {
 
     async updateTicket(id, data, userId) {
         const { answer, question, status } = data;
+        const normalizedAnswer = answer !== undefined
+            ? this._sanitizeI18nValue(answer, { required: true, fieldName: 'answer' })
+            : undefined;
+        const normalizedQuestion = question !== undefined
+            ? this._sanitizeI18nValue(question, { required: false, fieldName: 'question' })
+            : undefined;
 
         const existing = await prisma.supportTicket.findUnique({
             where: { id },
@@ -308,11 +369,11 @@ export class SupportTicketService {
         }
 
         const updateData = {
-            ...(answer && { answer }),
-            ...(question && { question }),
+            ...(normalizedAnswer !== undefined && { answer: normalizedAnswer }),
+            ...(normalizedQuestion !== undefined && { question: normalizedQuestion }),
             ...(status && { status }),
         };
-        if (answer && !status) {
+        if (normalizedAnswer && !status) {
             updateData.status = 'IN_PROGRESS';
         }
 
