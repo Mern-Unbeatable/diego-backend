@@ -3,7 +3,10 @@ import { authMiddleware } from '../../shared/globals/helpers/auth-middleware.js'
 import { i18nMiddleware } from '../../shared/globals/helpers/I18n.middleware.js';
 import { tenantMiddleware } from '../../shared/globals/helpers/tenant.middleware.js';
 import { supportTicketController } from './supportTicket.controller.js';
-import { parseLessonJsonFields, uploadLessonFiles, uploadTicketFiles } from '../../shared/upload/upload.presets.js';
+import { parseJsonFields } from '../../shared/upload/index.js';
+import { uploadTicketFiles } from '../../shared/upload/upload.presets.js';
+
+const parseTicketJsonFields = parseJsonFields(['question']);
 
 const router = express.Router();
 router.use(tenantMiddleware);
@@ -11,7 +14,7 @@ router.use(authMiddleware.protect);
 router.use(i18nMiddleware);
 
 router.get('/my', supportTicketController.getMyTickets);
-router.post('/', uploadTicketFiles, parseLessonJsonFields, supportTicketController.createTicket);
+router.post('/', uploadTicketFiles, parseTicketJsonFields, supportTicketController.createTicket);
 
 router.get('/:id', supportTicketController.getTicketById);
 
